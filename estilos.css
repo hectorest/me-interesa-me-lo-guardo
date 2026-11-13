@@ -320,3 +320,8 @@ body.seleccionando .principal { padding-bottom: 140px; }
 .chip-vista.activa { background: var(--tinta); border-color: var(--tinta); color: #fff; }
 .chip-vista.activa span { color: rgba(255,255,255,.7); }
 .fila-chips.sub .chip-vista { font-size: 13px; padding: 4px 10px; }
+
+/* Selección con rectángulo */
+.rectangulo-sel { position: absolute; z-index: 60; pointer-events: none; border: 1.5px solid var(--acento); background: rgba(210, 78, 36, .1); border-radius: 4px; }
+body.arrastrando, body.arrastrando * { user-select: none !important; -webkit-user-select: none !important; cursor: crosshair !important; }
+.tarjeta img { -webkit-user-drag: none; }

@@ -84,7 +84,7 @@ function tostada(msg, ms = 3200) {
 
 function img(src, alt = "") {
   return src
-    ? `<img src="${esc(src)}" alt="${esc(alt)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'sin-foto',textContent:'🛍️'}))">`
+    ? `<img src="${esc(src)}" alt="${esc(alt)}" loading="lazy" draggable="false" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'sin-foto',textContent:'🛍️'}))">`
     : `<span class="sin-foto">🛍️</span>`;
 }
 
@@ -1254,7 +1254,7 @@ function abrirAjustes() {
           <li>Para actualizar un precio: abre el producto → <b>Poner precio a mano</b>, o vuelve a guardarlo con el marcador.</li>
           <li><b>Revisión automática:</b> cada día se revisan los precios de los productos pendientes. Las bajadas aparecen como <b>↓ X €</b>; usa el filtro <b>Solo bajadas</b> para verlas todas.</li>
           <li><b>Espacios:</b> además de la categoría (qué es), cada producto puede tener uno o varios espacios (dónde irá: cocina, dormitorio…). En el lateral puedes combinarlos, por ejemplo «Sillas» + «Comedor». Si añades un producto con un espacio abierto, se le asigna automáticamente.</li>
-          <li><b>Cambios en bloque:</b> pulsa <b>☑ Seleccionar</b> (o mantén pulsada una tarjeta en el móvil) para cambiar categorías, espacios o estado de varios productos a la vez.</li>
+          <li><b>Cambios en bloque:</b> pulsa <b>☑ Seleccionar</b>, arrastra el ratón con el botón pulsado para marcar varias de golpe (con Ctrl/⌘ se desmarcan), o mantén pulsada una tarjeta en el móvil, para cambiar categorías, espacios o estado de varios productos a la vez.</li>
           <li><b>Mismo producto en otra tienda:</b> al añadirlo, la app te preguntará si es el mismo; así se agrupan las ofertas y se marca la más barata.</li>
         </ul>
       </details>
@@ -1557,6 +1557,82 @@ $("#sel-todo").onclick = (e) => {
   pintarRejilla(); pintarBarraSel();
 };
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && E.modoSel && !$("dialog[open]")) salirSeleccion(); });
+
+// Selección arrastrando el ratón (rectángulo), como en el escritorio del ordenador
+(() => {
+  let ini = null, rect = null, base = null, arrastrando = false, ultimoEv = null, rafScroll = null;
+  const zona = () => $(".principal");
+  const noEmpezar = (t) => t.closest("input, select, textarea, button, a, label, dialog, .barra-sel, .barra-filtros, .chips-vista");
+  document.addEventListener("pointerdown", (e) => {
+    if (e.pointerType !== "mouse" || e.button !== 0 || $("dialog[open]")) return;
+    if (!zona()?.contains(e.target) || noEmpezar(e.target)) return;
+    ini = { x: e.pageX, y: e.pageY };
+    base = new Set(E.modoSel ? E.sel : []);
+    e.preventDefault(); // sin selección de texto ni arrastre de imágenes
+  });
+  function actualizar(e) {
+    ultimoEv = e;
+    const x1 = Math.min(ini.x, e.pageX), y1 = Math.min(ini.y, e.pageY), x2 = Math.max(ini.x, e.pageX), y2 = Math.max(ini.y, e.pageY);
+    Object.assign(rect.style, { left: x1 + "px", top: y1 + "px", width: x2 - x1 + "px", height: y2 - y1 + "px" });
+    const nueva = new Set(base);
+    for (const t of $$(".tarjeta")) {
+      const r = t.getBoundingClientRect();
+      const tx1 = r.left + scrollX, ty1 = r.top + scrollY, tx2 = r.right + scrollX, ty2 = r.bottom + scrollY;
+      if (tx1 < x2 && tx2 > x1 && ty1 < y2 && ty2 > y1) {
+        // con Ctrl/⌘ pulsado se invierte la selección de lo que toca el rectángulo
+        if ((e.ctrlKey || e.metaKey) && base.has(t.dataset.producto)) nueva.delete(t.dataset.producto);
+        else nueva.add(t.dataset.producto);
+      }
+    }
+    E.sel = nueva;
+    for (const t of $$(".tarjeta")) {
+      const s = E.sel.has(t.dataset.producto);
+      t.classList.toggle("seleccionada", s);
+      const c = $(".casilla", t); if (c) c.textContent = s ? "✓" : "";
+    }
+    pintarBarraSel();
+  }
+  // Desplazamiento automático al acercarse a los bordes de la ventana
+  function autoScroll() {
+    if (!arrastrando || !ultimoEv) return;
+    const m = 50, y = ultimoEv.clientY;
+    const v = y < m ? -(m - y) / 3 : y > innerHeight - m ? (y - (innerHeight - m)) / 3 : 0;
+    if (v) {
+      scrollBy(0, v);
+      actualizar({ pageX: ultimoEv.clientX + scrollX, pageY: ultimoEv.clientY + scrollY, clientX: ultimoEv.clientX, clientY: ultimoEv.clientY, ctrlKey: ultimoEv.ctrlKey, metaKey: ultimoEv.metaKey });
+    }
+    rafScroll = requestAnimationFrame(autoScroll);
+  }
+  document.addEventListener("pointermove", (e) => {
+    if (!ini) return;
+    if (!arrastrando) {
+      if (Math.hypot(e.pageX - ini.x, e.pageY - ini.y) < 6) return;
+      arrastrando = true;
+      if (!E.modoSel) entrarSeleccion();
+      document.body.classList.add("arrastrando");
+      rect = document.createElement("div");
+      rect.className = "rectangulo-sel";
+      document.body.appendChild(rect);
+      rafScroll = requestAnimationFrame(autoScroll);
+    }
+    actualizar(e);
+  });
+  const terminar = () => {
+    if (arrastrando) {
+      rect?.remove(); rect = null;
+      document.body.classList.remove("arrastrando");
+      cancelAnimationFrame(rafScroll);
+      // evitar que el clic que sigue al soltar abra o desmarque una tarjeta
+      const parar = (ev) => { ev.stopPropagation(); ev.preventDefault(); };
+      document.addEventListener("click", parar, { capture: true, once: true });
+      setTimeout(() => document.removeEventListener("click", parar, { capture: true }), 50);
+    }
+    ini = null; arrastrando = false; ultimoEv = null;
+  };
+  document.addEventListener("selectstart", (e) => { if (ini) e.preventDefault(); });
+  document.addEventListener("pointerup", terminar);
+  document.addEventListener("pointercancel", terminar);
+})();
 
 // Mantener pulsada una tarjeta (móvil) entra en modo selección
 let tPulsacion;
