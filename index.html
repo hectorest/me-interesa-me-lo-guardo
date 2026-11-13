@@ -23,8 +23,14 @@
         <label>Correo<input type="email" name="email" required autocomplete="email"></label>
         <label>Contraseña<input type="password" name="password" required minlength="6" autocomplete="current-password"></label>
         <button class="btn primario" type="submit" id="btn-acceso">Entrar</button>
-        <p class="pequeno">¿Primera vez? <a href="#" id="alternar-registro">Crear cuenta</a></p>
+        <p class="pequeno">¿Primera vez? <a href="#" id="alternar-registro">Crear cuenta</a> · <a href="#" id="olvide">¿Olvidaste la contraseña?</a></p>
         <p id="msg-acceso" class="aviso" hidden></p>
+      </form>
+      <form id="form-nueva-clave" hidden>
+        <p>Escribe tu nueva contraseña.</p>
+        <label>Nueva contraseña<input type="password" name="password" required minlength="6" autocomplete="new-password"></label>
+        <button class="btn primario" type="submit">Guardar contraseña</button>
+        <p id="msg-clave" class="aviso" hidden></p>
       </form>
     </div>
   </section>

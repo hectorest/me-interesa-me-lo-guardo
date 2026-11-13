@@ -903,7 +903,9 @@ function mostrarAcceso(msg = "", ok = false) {
 
 async function iniciar() {
   const entrada = leerEntrada();
+  const viaRecuperacion = /type=recovery/.test(location.hash + location.search);
   const { data: { session } } = await sb.auth.getSession();
+  if (recuperando || (viaRecuperacion && session)) return pedirNuevaClave();
   if (!session) return mostrarAcceso();
   E.usuario = session.user;
   const { data: miembro } = await sb.rpc("es_miembro");
@@ -923,6 +925,36 @@ $("#alternar-registro").onclick = (e) => {
   $("#btn-acceso").textContent = modoRegistro ? "Crear cuenta" : "Entrar";
   e.target.textContent = modoRegistro ? "Ya tengo cuenta" : "Crear cuenta";
   e.target.previousSibling.textContent = modoRegistro ? "¿Ya tienes cuenta? " : "¿Primera vez? ";
+};
+
+// ---- Recuperar contraseña ----
+let recuperando = false;
+$("#olvide").onclick = async (e) => {
+  e.preventDefault();
+  const email = $("#form-acceso").email.value.trim();
+  if (!email) { mostrarAcceso("Escribe primero tu correo y vuelve a pulsar «¿Olvidaste la contraseña?»."); $("#form-acceso").email.focus(); return; }
+  const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: APP_URL });
+  if (error) mostrarAcceso("No se pudo enviar el correo: " + error.message);
+  else mostrarAcceso("Te hemos enviado un correo con un enlace para cambiar la contraseña. Ábrelo en este mismo dispositivo.", true);
+};
+function pedirNuevaClave() {
+  recuperando = true;
+  $("#app").hidden = true;
+  $("#pantalla-acceso").hidden = false;
+  $("#form-acceso").hidden = true;
+  $("#form-nueva-clave").hidden = false;
+  $("#form-nueva-clave").password.focus();
+}
+sb.auth.onAuthStateChange((evento) => { if (evento === "PASSWORD_RECOVERY") pedirNuevaClave(); });
+$("#form-nueva-clave").onsubmit = async (e) => {
+  e.preventDefault();
+  const m = $("#msg-clave");
+  const { error } = await sb.auth.updateUser({ password: e.target.password.value });
+  m.hidden = false;
+  if (error) { m.className = "aviso"; m.textContent = "Error: " + error.message; return; }
+  m.className = "aviso ok"; m.textContent = "Contraseña cambiada ✓";
+  recuperando = false;
+  setTimeout(() => { $("#form-nueva-clave").hidden = true; $("#form-acceso").hidden = false; iniciar(); }, 900);
 };
 $("#form-acceso").onsubmit = async (e) => {
   e.preventDefault();
