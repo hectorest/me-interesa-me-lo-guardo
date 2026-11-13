@@ -274,3 +274,18 @@ body.seleccionando .principal { padding-bottom: 140px; }
   .barra-sel-info { flex-basis: 100%; }
   .barra-sel select.btn { font-size: 16px !important; }
 }
+
+/* Espacios */
+.cat.espacio .flecha { font-size: 11px; }
+.cat.nuevo-espacio { color: var(--tinta-3); font-size: 13px; }
+.cat.nuevo-espacio:hover { color: var(--acento-2); }
+.etq.esp { background: #e6eef5; color: #2f5a7a; }
+.filtro-esp { display: inline-flex; align-items: center; gap: 6px; background: #e6eef5; color: #2f5a7a; padding: 2px 8px; border-radius: 99px; font-size: 12px; }
+.filtro-esp a { color: inherit; text-decoration: none; font-weight: 700; }
+.chips-esp { gap: 6px; }
+.chip-esp { border: 1px solid var(--linea); background: #fff; border-radius: 99px; padding: 5px 11px; font-size: 13px; cursor: pointer; color: var(--tinta-2); }
+.chip-esp.on { background: #e6eef5; border-color: #9bb8cf; color: #2f5a7a; font-weight: 600; }
+.chip-esp.nuevo { border-style: dashed; color: var(--tinta-3); }
+.fila-gestion.esp { grid-template-columns: 1fr auto auto; }
+.orden-btns { display: inline-flex; gap: 4px; }
+@media (max-width: 820px) { .fila-gestion.esp { grid-template-columns: 1fr auto auto; } }

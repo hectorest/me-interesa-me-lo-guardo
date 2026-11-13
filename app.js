@@ -28,7 +28,8 @@ const E = {
   usuario: null,
   cats: [],
   prods: [],
-  filtro: { cat: "todas", estado: "pendiente", tienda: "", orden: "recientes", q: "", bajadas: false },
+  esps: [],
+  filtro: { cat: "todas", esp: "", estado: "pendiente", tienda: "", orden: "recientes", q: "", bajadas: false },
   abiertas: new Set(leerLocal("cats-abiertas", [])),
   ultimaCarga: 0,
 };
@@ -186,25 +187,30 @@ const bajadaProducto = (p) => Math.max(0, ...p.ofertas.map((o) => Math.max(bajad
 
 // ---------------- Carga de datos ----------------
 async function cargar() {
-  const [c, p] = await Promise.all([
+  const [c, p, s] = await Promise.all([
     sb.from("categorias").select("*"),
-    sb.from("productos").select("*, ofertas(*), producto_categorias(categoria_id)").order("creado_en", { ascending: false }),
+    sb.from("productos").select("*, ofertas(*), producto_categorias(categoria_id), producto_espacios(espacio_id)").order("creado_en", { ascending: false }),
+    sb.from("espacios").select("*").order("orden").order("nombre"),
   ]);
-  if (c.error || p.error) { tostada("Error al cargar: " + (c.error || p.error).message); return; }
+  if (c.error || p.error || s.error) { tostada("Error al cargar: " + (c.error || p.error || s.error).message); return; }
   E.cats = c.data;
+  E.esps = s.data;
   E.prods = p.data.map((x) => ({
     ...x,
     cats: x.producto_categorias.map((r) => r.categoria_id),
+    esps: (x.producto_espacios || []).map((r) => r.espacio_id),
     ofertas: x.ofertas.map((o) => ({ ...o, precio: num(o.precio), precio_original: num(o.precio_original), precio_inicial: num(o.precio_inicial), precio_previo: num(o.precio_previo) })),
   }));
   E.ultimaCarga = Date.now();
   if (E.filtro.cat !== "todas" && E.filtro.cat !== "sin" && !catPorId(E.filtro.cat)) E.filtro.cat = "todas";
+  if (E.filtro.esp && E.filtro.esp !== "sin" && !espPorId(E.filtro.esp)) E.filtro.esp = "";
   pintar();
 }
 
 // ---------------- Pintado ----------------
-function filtrados({ ignorarCat = false } = {}) {
+function filtrados({ ignorarCat = false, ignorarEsp = false } = {}) {
   const f = E.filtro;
+  const esp = ignorarEsp ? "" : f.esp;
   const palabras = norm(f.q).split(" ").filter(Boolean);
   const enCat = f.cat === "todas" || ignorarCat ? null : f.cat === "sin" ? "sin" : descendientes(f.cat);
   return E.prods.filter((p) => {
@@ -212,9 +218,11 @@ function filtrados({ ignorarCat = false } = {}) {
     if (f.tienda && !p.ofertas.some((o) => o.tienda === f.tienda)) return false;
     if (enCat === "sin" && p.cats.length) return false;
     if (enCat instanceof Set && !p.cats.some((c) => enCat.has(c))) return false;
+    if (esp === "sin" && p.esps.length) return false;
+    if (esp && esp !== "sin" && !p.esps.includes(esp)) return false;
     if (f.bajadas && !bajadaProducto(p)) return false;
     if (palabras.length) {
-      const pajar = norm([p.nombre, p.marca, p.notas, p.descripcion, ...p.ofertas.map((o) => o.tienda), ...p.cats.map(ruta)].join(" "));
+      const pajar = norm([p.nombre, p.marca, p.notas, p.descripcion, ...p.ofertas.map((o) => o.tienda), ...p.cats.map(ruta), ...p.esps.map((e) => espPorId(e)?.nombre)].join(" "));
       if (!palabras.every((w) => pajar.includes(w))) return false;
     }
     return true;
@@ -223,6 +231,7 @@ function filtrados({ ignorarCat = false } = {}) {
 
 function pintar() {
   pintarArbol();
+  pintarEspacios();
   pintarTiendas();
   pintarRejilla();
 }
@@ -247,6 +256,52 @@ function pintarArbol() {
     <div class="separador"></div>
     ${hijosDe(null).map(nodo).join("") || `<p class="pequeno" style="padding:0 8px">Aún no hay categorías. Se crean al añadir productos.</p>`}
     ${sin ? `<div class="separador"></div><button class="cat ${E.filtro.cat === "sin" ? "activa" : ""}" data-cat="sin"><span class="flecha"></span><span>Sin categoría</span><span class="n">${sin}</span></button>` : ""}`;
+}
+
+const espPorId = (id) => E.esps.find((e) => e.id === id);
+
+function pintarEspacios() {
+  const base = filtrados({ ignorarEsp: true });
+  const sin = base.filter((p) => !p.esps.length).length;
+  $("#lista-espacios").innerHTML = E.esps.map((e) => {
+    const n = base.filter((p) => p.esps.includes(e.id)).length;
+    return `<button class="cat espacio ${E.filtro.esp === e.id ? "activa" : ""}" data-esp="${e.id}"><span class="flecha">📍</span><span>${esc(e.nombre)}</span><span class="n">${n}</span></button>`;
+  }).join("") + (sin && E.esps.length ? `<button class="cat espacio ${E.filtro.esp === "sin" ? "activa" : ""}" data-esp="sin"><span class="flecha"></span><span>Sin espacio</span><span class="n">${sin}</span></button>` : "")
+    + `<button class="cat nuevo-espacio" data-nuevo-esp><span class="flecha">＋</span><span>Nuevo espacio</span></button>`;
+}
+
+// Selector de espacios (chips que se activan/desactivan)
+function selectorEspacios(cont, seleccion, alCambiar = () => {}) {
+  const pintarSel = () => {
+    cont.innerHTML = `<div class="chips chips-esp">${E.esps.map((e) => `<button type="button" class="chip-esp ${seleccion.has(e.id) ? "on" : ""}" data-alt-esp="${e.id}">📍 ${esc(e.nombre)}</button>`).join("")}
+      <button type="button" class="chip-esp nuevo" data-crear-esp>＋ Nuevo</button></div>`;
+  };
+  cont.onclick = async (e) => {
+    const b = e.target.closest("[data-alt-esp]");
+    if (b) { const id = b.dataset.altEsp; seleccion.has(id) ? seleccion.delete(id) : seleccion.add(id); pintarSel(); alCambiar(); return; }
+    if (e.target.closest("[data-crear-esp]")) {
+      const nuevo = await crearEspacio();
+      if (nuevo) { seleccion.add(nuevo.id); pintarSel(); alCambiar(); }
+    }
+  };
+  pintarSel();
+}
+async function crearEspacio() {
+  const nombre = prompt("Nombre del nuevo espacio (por ejemplo: Cocina, Habitación de invitados…):")?.trim();
+  if (!nombre) return null;
+  const ya = E.esps.find((e) => norm(e.nombre) === norm(nombre));
+  if (ya) return ya;
+  const { data, error } = await sb.from("espacios").insert({ nombre: nombre.charAt(0).toUpperCase() + nombre.slice(1), orden: E.esps.length + 1 }).select().single();
+  if (error) { tostada("Error: " + error.message); return null; }
+  E.esps.push(data);
+  pintarEspacios();
+  return data;
+}
+async function guardarEspaciosProducto(pid, nuevos, antiguos = []) {
+  const quitar = antiguos.filter((x) => !nuevos.includes(x));
+  const poner = nuevos.filter((x) => !antiguos.includes(x));
+  if (quitar.length) { const { error } = await sb.from("producto_espacios").delete().eq("producto_id", pid).in("espacio_id", quitar); if (error) throw error; }
+  if (poner.length) { const { error } = await sb.from("producto_espacios").upsert(poner.map((e) => ({ producto_id: pid, espacio_id: e })), { ignoreDuplicates: true }); if (error) throw error; }
 }
 
 function pintarTiendas() {
@@ -285,20 +340,32 @@ function pintarRejilla() {
 function pintarTitulo() {
   const f = E.filtro, h2 = $("#titulo-vista"), rp = $("#ruta-padre");
   const enEdicion = $("#titulo-cat");
-  if (enEdicion && document.activeElement === enEdicion && enEdicion.dataset.cat === f.cat) return;
+  if (enEdicion && document.activeElement === enEdicion && (enEdicion.dataset.cat === f.cat || enEdicion.dataset.esp === f.esp)) return;
   const c = f.cat !== "todas" && f.cat !== "sin" ? catPorId(f.cat) : null;
+  const es = f.esp && f.esp !== "sin" ? espPorId(f.esp) : null;
+  const editable = (tipo, id, nombre) => `<span class="titulo-envoltura"><input class="titulo-editable" id="titulo-cat" data-${tipo}="${id}" value="${esc(nombre)}" spellcheck="false" autocomplete="off" aria-label="Nombre" title="Haz clic para cambiar el nombre"><span class="lapiz" aria-hidden="true">✎</span></span><span class="medidor" aria-hidden="true"></span>`;
+  const chipEsp = f.esp ? `<span class="filtro-esp">📍 ${f.esp === "sin" ? "Sin espacio" : esc(es?.nombre ?? "")} <a href="#" data-quitar-esp title="Ver todos los espacios">✕</a></span>` : "";
   if (!c) {
-    rp.hidden = true;
-    h2.textContent = f.cat === "sin" ? "Sin categoría" : "Todo";
+    if (es && f.cat === "todas") {
+      rp.hidden = false;
+      rp.innerHTML = `Espacio`;
+      h2.innerHTML = editable("esp", es.id, es.nombre);
+      ajustarAnchoTitulo();
+      return;
+    }
+    rp.hidden = !chipEsp;
+    rp.innerHTML = chipEsp;
+    h2.textContent = f.cat === "sin" ? "Sin categoría" : f.esp === "sin" ? "Sin espacio" : "Todo";
+    if (f.esp === "sin" && f.cat === "todas") { rp.hidden = true; }
     return;
   }
   // Ruta de categorías padre, pulsables
   const padres = [];
   let p = catPorId(c.padre_id), guard = 0;
   while (p && guard++ < 20) { padres.unshift(p); p = catPorId(p.padre_id); }
-  rp.hidden = !padres.length;
-  rp.innerHTML = padres.map((x) => `<a href="#" data-ir-cat="${x.id}">${esc(x.nombre)}</a>`).join(" › ") + (padres.length ? " ›" : "");
-  h2.innerHTML = `<span class="titulo-envoltura"><input class="titulo-editable" id="titulo-cat" data-cat="${c.id}" value="${esc(c.nombre)}" spellcheck="false" autocomplete="off" aria-label="Nombre de la categoría" title="Haz clic para cambiar el nombre"><span class="lapiz" aria-hidden="true">✎</span></span><span class="medidor" aria-hidden="true"></span>`;
+  rp.hidden = !padres.length && !chipEsp;
+  rp.innerHTML = padres.map((x) => `<a href="#" data-ir-cat="${x.id}">${esc(x.nombre)}</a>`).join(" › ") + (padres.length ? " ›" : "") + (chipEsp ? " " + chipEsp : "");
+  h2.innerHTML = editable("cat", c.id, c.nombre);
   ajustarAnchoTitulo();
 }
 function ajustarAnchoTitulo() {
@@ -308,6 +375,7 @@ function ajustarAnchoTitulo() {
   i.style.width = Math.ceil(m.getBoundingClientRect().width) + 16 + "px";
 }
 async function guardarNombreCategoria(input) {
+  if (input.dataset.esp) return guardarNombreEspacio(input);
   const c = catPorId(input.dataset.cat);
   if (!c) return;
   const nombre = input.value.replace(/\s+/g, " ").trim();
@@ -330,6 +398,23 @@ async function guardarNombreCategoria(input) {
   pintarRejilla();
 }
 
+async function guardarNombreEspacio(input) {
+  const s = espPorId(input.dataset.esp);
+  if (!s) return;
+  const nombre = input.value.replace(/\s+/g, " ").trim();
+  if (!nombre || nombre === s.nombre) { input.value = s.nombre; ajustarAnchoTitulo(); return; }
+  const repetido = E.esps.find((x) => x.id !== s.id && norm(x.nombre) === norm(nombre));
+  if (repetido) { tostada(`Ya hay un espacio «${repetido.nombre}»`); input.value = s.nombre; ajustarAnchoTitulo(); return; }
+  const anterior = s.nombre;
+  s.nombre = nombre;
+  pintarEspacios();
+  const { error } = await sb.from("espacios").update({ nombre }).eq("id", s.id);
+  if (error) { s.nombre = anterior; tostada("No se pudo renombrar: " + error.message); pintar(); return; }
+  tostada("Espacio renombrado ✓");
+  pintarEspacios(); pintarRejilla();
+}
+const nombreActual = (input) => (input.dataset.esp ? espPorId(input.dataset.esp)?.nombre : catPorId(input.dataset.cat)?.nombre);
+
 function tarjeta(p) {
   const o = mejorOferta(p);
   const baja = Math.max(0, ...p.ofertas.map(bajadaReciente));
@@ -347,7 +432,7 @@ function tarjeta(p) {
     <div class="info">
       <div class="nombre">${esc(p.nombre)}</div>
       <div class="tienda">${o ? esc(o.tienda || "") : ""}${nTiendas > 1 ? ` · ${nTiendas} tiendas` : ""}${o?.disponible === false ? " · <b>sin stock</b>" : ""}</div>
-      ${p.cats.length ? `<div class="etiquetas">${p.cats.slice(0, 3).map((c) => `<span class="etq">${esc(catPorId(c)?.nombre ?? "")}</span>`).join("")}</div>` : ""}
+      ${p.cats.length || p.esps.length ? `<div class="etiquetas">${p.cats.slice(0, 3).map((c) => `<span class="etq">${esc(catPorId(c)?.nombre ?? "")}</span>`).join("")}${p.esps.slice(0, 2).map((e) => `<span class="etq esp">📍 ${esc(espPorId(e)?.nombre ?? "")}</span>`).join("")}</div>` : ""}
       <div class="precio-linea">
         <span class="precio">${euros(o?.precio)}</span>
         ${o?.precio_original ? `<span class="precio-orig">${euros(o.precio_original)}</span>` : ""}
@@ -444,7 +529,7 @@ async function resolverCats(seleccion) {
 let B = null; // borrador actual
 
 function abrirAnadir({ url = "", datos = null, destino = null, titulo = "" } = {}) {
-  B = { destino, sel: [], sugeridas: [], decision: destino ? "existente:" + destino : "nuevo" };
+  B = { destino, sel: [], sugeridas: [], esps: new Set(E.filtro.esp && E.filtro.esp !== "sin" ? [E.filtro.esp] : []), decision: destino ? "existente:" + destino : "nuevo" };
   $("#anadir-titulo").textContent = destino ? "Añadir otra tienda" : "Añadir oferta";
   $("#in-url").value = url;
   $("#estado-lectura").textContent = "";
@@ -538,6 +623,10 @@ function pintarFormAnadir() {
         <label style="margin-bottom:6px">Categorías ${B.sel.some((s) => s.nuevo) || B.sugeridas.length ? `<span class="pequeno">(sugeridas automáticamente; puedes cambiarlas)</span>` : ""}</label>
         <div id="a-cats"></div>
       </div>
+      <div class="completo" id="bloque-esps" ${B.decision.startsWith("actualizar") ? "hidden" : ""}>
+        <label style="margin-bottom:6px">Espacios <span class="pequeno">(dónde irá: cocina, dormitorio…; opcional)</span></label>
+        <div id="a-esps"></div>
+      </div>
       <label class="completo">Notas<textarea id="a-notas" placeholder="Medidas, color, para qué habitación, código de descuento…"></textarea></label>
     </div>
     <div class="pie-dlg">
@@ -545,6 +634,7 @@ function pintarFormAnadir() {
       <button type="button" class="btn primario" id="btn-guardar">${B.decision.startsWith("actualizar") ? "Actualizar precio" : "Guardar"}</button>
     </div>`;
   selectorCats($("#a-cats"), B.sel, { sugeridas: B.sugeridas });
+  selectorEspacios($("#a-esps"), B.esps);
   $("#a-imagen").oninput = (e) => ($("#prev-img").innerHTML = img(e.target.value.trim()));
   $$('input[name="decision"]', cont).forEach((r) => (r.onchange = () => (B.decision = r.value)));
   $("[data-cerrar]", cont).onclick = () => $("#dlg-anadir").close();
@@ -600,6 +690,7 @@ async function guardarBorrador() {
       const { error } = await sb.from("producto_categorias").upsert(catIds.map((c) => ({ producto_id: pid, categoria_id: c })), { ignoreDuplicates: true });
       if (error) throw error;
     }
+    if (B.esps.size) await guardarEspaciosProducto(pid, [...B.esps], E.prods.find((x) => x.id === pid)?.esps ?? []);
     const { error: eo } = await sb.from("ofertas").insert({
       producto_id: pid, url: B.d.url, tienda, titulo: nombre, imagen,
       precio, precio_original: original, disponible: B.d.disponible ?? null,
@@ -622,7 +713,7 @@ let D = null;
 async function abrirDetalle(id) {
   const p = E.prods.find((x) => x.id === id);
   if (!p) return;
-  D = { id, sel: p.cats.map((c) => ({ id: c })) };
+  D = { id, sel: p.cats.map((c) => ({ id: c })), esps: new Set(p.esps) };
   const dlg = $("#dlg-detalle");
   pintarDetalle();
   if (!dlg.open) dlg.showModal();
@@ -652,6 +743,7 @@ function pintarDetalle() {
         </div>
         <label>Imagen (enlace)<input type="url" id="d-imagen" value="${esc(p.imagen ?? "")}"></label>
         <div><label style="margin-bottom:6px">Categorías</label><div id="d-cats"></div></div>
+        <div><label style="margin-bottom:6px">Espacios</label><div id="d-esps"></div></div>
         <label>Notas<textarea id="d-notas">${esc(p.notas ?? "")}</textarea></label>
         <div class="pie-dlg" style="justify-content:flex-start"><button class="btn primario" id="d-guardar">Guardar cambios</button></div>
       </div>
@@ -693,6 +785,7 @@ function pintarDetalle() {
       <button class="btn mini peligro" id="d-borrar">Eliminar producto</button>
     </div>`;
   selectorCats($("#d-cats"), D.sel);
+  selectorEspacios($("#d-esps"), D.esps);
   if (D.historial) pintarGrafica();
 }
 
@@ -748,8 +841,10 @@ async function accionDetalle(e) {
       const poner = ids.filter((c) => !p.cats.includes(c));
       if (quitar.length) await sb.from("producto_categorias").delete().eq("producto_id", p.id).in("categoria_id", quitar);
       if (poner.length) await sb.from("producto_categorias").insert(poner.map((c) => ({ producto_id: p.id, categoria_id: c })));
+      await guardarEspaciosProducto(p.id, [...D.esps], p.esps);
       await cargar();
       D.sel = E.prods.find((x) => x.id === p.id).cats.map((c) => ({ id: c }));
+      D.esps = new Set(E.prods.find((x) => x.id === p.id).esps);
       pintarDetalle();
       tostada("Cambios guardados ✓");
     } catch (err) { tostada("Error: " + err.message); t.disabled = false; }
@@ -798,6 +893,7 @@ async function accionDetalle(e) {
     const { data, error } = await sb.from("productos").insert({ nombre: o.titulo || p.nombre, imagen: o.imagen || p.imagen, marca: p.marca }).select().single();
     if (error) { tostada("Error: " + error.message); return; }
     if (p.cats.length) await sb.from("producto_categorias").insert(p.cats.map((c) => ({ producto_id: data.id, categoria_id: c })));
+    if (p.esps.length) await sb.from("producto_espacios").insert(p.esps.map((e) => ({ producto_id: data.id, espacio_id: e })));
     await sb.from("ofertas").update({ producto_id: data.id }).eq("id", o.id);
     await cargar(); await abrirDetalle(p.id);
     tostada("Oferta separada en su propio producto");
@@ -811,6 +907,8 @@ async function accionDetalle(e) {
     await sb.from("ofertas").update({ producto_id: destino }).eq("producto_id", p.id);
     const nuevas = p.cats.filter((c) => !dest.cats.includes(c));
     if (nuevas.length) await sb.from("producto_categorias").insert(nuevas.map((c) => ({ producto_id: destino, categoria_id: c })));
+    const espsNuevos = p.esps.filter((x) => !dest.esps.includes(x));
+    if (espsNuevos.length) await sb.from("producto_espacios").insert(espsNuevos.map((x) => ({ producto_id: destino, espacio_id: x })));
     const cambios = {};
     if (!dest.ean && p.ean) cambios.ean = p.ean;
     if (!dest.imagen && p.imagen) cambios.imagen = p.imagen;
@@ -831,7 +929,35 @@ async function accionDetalle(e) {
 }
 
 // ---------------- Gestión de categorías ----------------
+function abrirGestionEspacios() {
+  $("#dlg-cats h3").textContent = "Espacios";
+  pintarGestionEspacios();
+  $("#dlg-cats").showModal();
+}
+function pintarGestionEspacios() {
+  $("#gestion-cats").innerHTML = `
+    <p class="pequeno">Los espacios indican dónde irá cada cosa (cocina, dormitorio…). Son independientes de las categorías: puedes ver, por ejemplo, las «Sillas» del «Comedor». Los cambios se guardan al salir de cada campo.</p>
+    <div class="lista-cats">
+      ${E.esps.map((s, i) => `<div class="fila-gestion esp">
+          <input type="text" value="${esc(s.nombre)}" data-renombrar-esp="${s.id}">
+          <span class="orden-btns"><button class="btn mini" data-subir-esp="${i}" ${i ? "" : "disabled"} aria-label="Subir">↑</button><button class="btn mini" data-bajar-esp="${i}" ${i < E.esps.length - 1 ? "" : "disabled"} aria-label="Bajar">↓</button></span>
+          <button class="btn mini peligro" data-borrar-esp="${s.id}" aria-label="Eliminar">✕</button>
+        </div>`).join("") || `<p class="pequeno">Aún no hay espacios.</p>`}
+    </div>
+    <div class="fila-cat">
+      <input type="text" id="nuevo-esp" placeholder="Nuevo espacio">
+      <button class="btn mini primario" id="crear-esp">Crear</button>
+    </div>`;
+}
+async function reordenarEspacios(i, j) {
+  const lista = [...E.esps];
+  [lista[i], lista[j]] = [lista[j], lista[i]];
+  await Promise.all(lista.map((s, k) => sb.from("espacios").update({ orden: k + 1 }).eq("id", s.id)));
+  await cargar(); pintarGestionEspacios();
+}
+
 function abrirGestionCats() {
+  $("#dlg-cats h3").textContent = "Categorías";
   pintarGestionCats();
   $("#dlg-cats").showModal();
 }
@@ -863,6 +989,23 @@ function pintarGestionCats() {
 }
 async function accionCats(e) {
   const t = e.target;
+  if (t.id === "crear-esp") {
+    const nombre = $("#nuevo-esp").value.trim();
+    if (!nombre) return;
+    if (E.esps.some((s) => norm(s.nombre) === norm(nombre))) return tostada("Ese espacio ya existe");
+    const { error } = await sb.from("espacios").insert({ nombre, orden: E.esps.length + 1 });
+    if (error) return tostada("Error: " + error.message);
+    await cargar(); pintarGestionEspacios(); return;
+  }
+  if (t.dataset.subirEsp) return reordenarEspacios(+t.dataset.subirEsp, +t.dataset.subirEsp - 1);
+  if (t.dataset.bajarEsp) return reordenarEspacios(+t.dataset.bajarEsp, +t.dataset.bajarEsp + 1);
+  if (t.dataset.borrarEsp) {
+    const s = espPorId(t.dataset.borrarEsp);
+    const n = E.prods.filter((p) => p.esps.includes(s.id)).length;
+    if (!confirm(`¿Eliminar el espacio «${s.nombre}»?${n ? ` ${n} producto(s) dejarán de estar en él (no se borran).` : ""}`)) return;
+    await sb.from("espacios").delete().eq("id", s.id);
+    await cargar(); pintarGestionEspacios(); return;
+  }
   if (t.id === "crear-cat") {
     const nombre = $("#nueva-cat").value.trim();
     if (!nombre) return;
@@ -881,6 +1024,12 @@ async function accionCats(e) {
 }
 async function cambioCats(e) {
   const t = e.target;
+  if (t.dataset.renombrarEsp) {
+    const v = t.value.trim();
+    if (!v) return;
+    await sb.from("espacios").update({ nombre: v }).eq("id", t.dataset.renombrarEsp);
+    await cargar(); pintarGestionEspacios(); tostada("Renombrado"); return;
+  }
   if (t.dataset.renombrar) {
     const v = t.value.trim();
     if (!v) return;
@@ -979,6 +1128,8 @@ function abrirAjustes() {
           <li>Si la tienda no deja leer los datos, escribe el nombre y el precio tú mismo en la ventana de añadir.</li>
           <li>Para actualizar un precio: abre el producto → <b>Poner precio a mano</b>, o vuelve a guardarlo con el marcador.</li>
           <li><b>Revisión automática:</b> cada día se revisan los precios de los productos pendientes. Las bajadas aparecen como <b>↓ X €</b>; usa el filtro <b>Solo bajadas</b> para verlas todas.</li>
+          <li><b>Espacios:</b> además de la categoría (qué es), cada producto puede tener uno o varios espacios (dónde irá: cocina, dormitorio…). En el lateral puedes combinarlos, por ejemplo «Sillas» + «Comedor». Si añades un producto con un espacio abierto, se le asigna automáticamente.</li>
+          <li><b>Cambios en bloque:</b> pulsa <b>☑ Seleccionar</b> (o mantén pulsada una tarjeta en el móvil) para cambiar categorías, espacios o estado de varios productos a la vez.</li>
           <li><b>Mismo producto en otra tienda:</b> al añadirlo, la app te preguntará si es el mismo; así se agrupan las ofertas y se marca la más barata.</li>
         </ul>
       </details>
@@ -1144,6 +1295,7 @@ $("#form-acceso").onsubmit = async (e) => {
 $("#btn-anadir").onclick = () => abrirAnadir();
 $("#btn-ajustes").onclick = abrirAjustes;
 $("#btn-gestionar-cats").onclick = abrirGestionCats;
+$("#btn-gestionar-esps").onclick = abrirGestionEspacios;
 $("#form-url").onsubmit = (e) => { e.preventDefault(); leer(); };
 $("#in-url").addEventListener("paste", () => setTimeout(() => { if (/^https?:\/\//.test($("#in-url").value.trim())) leer(); }, 0));
 $("#detalle").addEventListener("click", accionDetalle);
@@ -1162,10 +1314,20 @@ $("#titulo-vista").addEventListener("input", (e) => { if (e.target.id === "titul
 $("#titulo-vista").addEventListener("keydown", (e) => {
   if (e.target.id !== "titulo-cat") return;
   if (e.key === "Enter") { e.preventDefault(); e.target.blur(); }
-  if (e.key === "Escape") { e.target.value = catPorId(e.target.dataset.cat)?.nombre ?? e.target.value; ajustarAnchoTitulo(); e.target.blur(); }
+  if (e.key === "Escape") { e.target.value = nombreActual(e.target) ?? e.target.value; ajustarAnchoTitulo(); e.target.blur(); }
 });
 $("#titulo-vista").addEventListener("focusout", (e) => { if (e.target.id === "titulo-cat") guardarNombreCategoria(e.target); });
+$("#lista-espacios").addEventListener("click", async (e) => {
+  if (e.target.closest("[data-nuevo-esp]")) { const n = await crearEspacio(); if (n) { E.filtro.esp = n.id; pintar(); } return; }
+  const b = e.target.closest("[data-esp]");
+  if (!b) return;
+  E.filtro.esp = E.filtro.esp === b.dataset.esp ? "" : b.dataset.esp; // pulsar de nuevo lo quita
+  pintar();
+  cerrarMenu();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+});
 $("#ruta-padre").addEventListener("click", (e) => {
+  if (e.target.closest("[data-quitar-esp]")) { e.preventDefault(); E.filtro.esp = ""; pintar(); return; }
   const a = e.target.closest("[data-ir-cat]");
   if (!a) return;
   e.preventDefault();
@@ -1239,6 +1401,11 @@ function pintarBarraSel() {
   const q = $("#sel-quitar");
   q.hidden = !c;
   if (c) q.textContent = `Quitar de «${c.nombre}»`;
+  const es = E.filtro.esp && E.filtro.esp !== "sin" ? espPorId(E.filtro.esp) : null;
+  const qe = $("#sel-quitar-esp");
+  qe.hidden = !es;
+  if (es) qe.textContent = `Quitar de 📍${es.nombre}`;
+  ["#sel-esps", "#sel-quitar-esp"].forEach((s) => ($(s).disabled = !n));
 }
 $("#btn-seleccionar").onclick = () => (E.modoSel ? salirSeleccion() : entrarSeleccion());
 $("#sel-cancelar").onclick = salirSeleccion;
@@ -1284,11 +1451,38 @@ $("#sel-quitar").onclick = async () => {
   tostada(`${ids.length} producto(s) quitados de «${c.nombre}»`);
 };
 
-// Añadir / mover a categorías en bloque
-let selMasivo = [];
+// Quitar del espacio actual
+$("#sel-quitar-esp").onclick = async () => {
+  const s = espPorId(E.filtro.esp);
+  if (!s || !E.sel.size) return;
+  const ids = [...E.sel];
+  const { error } = await sb.from("producto_espacios").delete().in("producto_id", ids).eq("espacio_id", s.id);
+  if (error) return tostada("Error: " + error.message);
+  salirSeleccion(); await cargar();
+  tostada(`${ids.length} producto(s) quitados de ${s.nombre}`);
+};
+
+// Añadir / mover a categorías o espacios en bloque
+let selMasivo = [], espsMasivo = new Set(), tipoMasivo = "cat";
+function prepararMasivo(tipo) {
+  tipoMasivo = tipo;
+  $("#masivo-cats").hidden = tipo !== "cat";
+  $("#masivo-esps").hidden = tipo !== "esp";
+  $$(".opciones-masivo .que").forEach((s) => (s.textContent = tipo === "cat" ? "estas categorías" : "estos espacios"));
+}
+$("#sel-esps").onclick = () => {
+  if (!E.sel.size) return;
+  espsMasivo = new Set();
+  prepararMasivo("esp");
+  $("#masivo-titulo").textContent = `Cambiar espacios de ${E.sel.size} producto(s)`;
+  $$('input[name="modo-masivo"]').forEach((r) => (r.checked = r.value === "anadir"));
+  selectorEspacios($("#masivo-esps"), espsMasivo);
+  $("#dlg-masivo").showModal();
+};
 $("#sel-cats").onclick = () => {
   if (!E.sel.size) return;
   selMasivo = [];
+  prepararMasivo("cat");
   $("#masivo-titulo").textContent = `Cambiar categorías de ${E.sel.size} producto(s)`;
   $$('input[name="modo-masivo"]').forEach((r) => (r.checked = r.value === "anadir"));
   selectorCats($("#masivo-cats"), selMasivo);
@@ -1298,6 +1492,25 @@ $("#sel-cats").onclick = () => {
 $("#masivo-cancelar").onclick = () => $("#dlg-masivo").close();
 $("#masivo-aplicar").onclick = async (e) => {
   const modo = $('input[name="modo-masivo"]:checked').value;
+  if (tipoMasivo === "esp") {
+    if (!espsMasivo.size && modo === "anadir") return tostada("Elige al menos un espacio");
+    if (!espsMasivo.size && !confirm("No has elegido ningún espacio: los productos se quedarán sin espacio. ¿Continuar?")) return;
+    const btn = e.target; btn.disabled = true;
+    try {
+      const ids = [...E.sel];
+      if (modo === "mover") { const { error } = await sb.from("producto_espacios").delete().in("producto_id", ids); if (error) throw error; }
+      if (espsMasivo.size) {
+        const filas = ids.flatMap((p) => [...espsMasivo].map((s) => ({ producto_id: p, espacio_id: s })));
+        const { error } = await sb.from("producto_espacios").upsert(filas, { ignoreDuplicates: true });
+        if (error) throw error;
+      }
+      $("#dlg-masivo").close();
+      salirSeleccion(); await cargar();
+      tostada(`${ids.length} producto(s) ${modo === "mover" ? "movidos" : "actualizados"} ✓`);
+    } catch (err) { tostada("Error: " + err.message, 6000); }
+    finally { btn.disabled = false; }
+    return;
+  }
   // Si se ha escrito algo en el campo sin pulsar «Añadir», lo añadimos
   const pendiente = $("#masivo-cats [data-entrada]");
   if (pendiente?.value.trim()) $("#masivo-cats [data-anadir]").click();

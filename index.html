@@ -55,6 +55,11 @@
           <button class="btn enlace" id="btn-gestionar-cats">Editar</button>
         </div>
         <nav id="arbol-cats"></nav>
+        <div class="lateral-titulo" style="margin-top:18px">
+          <span>Espacios</span>
+          <button class="btn enlace" id="btn-gestionar-esps">Editar</button>
+        </div>
+        <nav id="lista-espacios"></nav>
       </aside>
       <div class="velo solo-movil" id="velo" hidden></div>
 
@@ -139,6 +144,8 @@
     <div class="barra-sel-acciones">
       <button class="btn mini primario" id="sel-cats">Cambiar categorías…</button>
       <button class="btn mini" id="sel-quitar" hidden></button>
+      <button class="btn mini" id="sel-esps">📍 Espacios…</button>
+      <button class="btn mini" id="sel-quitar-esp" hidden></button>
       <select id="sel-estado" class="btn mini" aria-label="Cambiar estado">
         <option value="">Marcar como…</option>
         <option value="pendiente">Pendiente</option>
@@ -157,10 +164,11 @@
     </form>
     <div class="dlg-cuerpo">
       <div class="opciones-masivo">
-        <label><input type="radio" name="modo-masivo" value="anadir" checked> <span><b>Añadir</b> estas categorías<br><small class="pequeno">Los productos conservan las que ya tenían.</small></span></label>
-        <label><input type="radio" name="modo-masivo" value="mover"> <span><b>Mover</b> a estas categorías<br><small class="pequeno">Se sustituyen todas las categorías que tuvieran.</small></span></label>
+        <label><input type="radio" name="modo-masivo" value="anadir" checked> <span><b>Añadir</b> <span class="que">estas categorías</span><br><small class="pequeno">Los productos conservan los que ya tenían.</small></span></label>
+        <label><input type="radio" name="modo-masivo" value="mover"> <span><b>Mover</b> a <span class="que">estas categorías</span><br><small class="pequeno">Se sustituyen todos los que tuvieran.</small></span></label>
       </div>
       <div id="masivo-cats"></div>
+      <div id="masivo-esps" hidden></div>
       <div class="pie-dlg">
         <button type="button" class="btn" id="masivo-cancelar">Cancelar</button>
         <button type="button" class="btn primario" id="masivo-aplicar">Aplicar</button>
