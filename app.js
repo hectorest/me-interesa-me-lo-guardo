@@ -355,9 +355,11 @@ function pintarPlano() {
   if (E.espPlano && E.espPlano !== "sin" && !espPorId(E.espPlano)) E.espPlano = null;
   // Orientación: la que deja el plano más grande en el hueco disponible (al lado del panel en pantalla ancha)
   if (pantallaAncha()) {
-    const ancho = cont.clientWidth - 400, alto = innerHeight - 150;
-    E.planoHorizontal = Math.min(ancho / 2070, alto / 866) > Math.min(ancho / 866, alto / 2070);
-  } else E.planoHorizontal = false;
+    const ancho = cont.clientWidth / 2 - 20, alto = innerHeight - 150;
+    const h = Math.min(ancho / 2070, alto / 866) > Math.min(ancho / 866, alto / 2070);
+    if (h !== E.planoHorizontal) E.vb = null; // al girar, volver a encuadrar
+    E.planoHorizontal = h;
+  } else { if (E.planoHorizontal) E.vb = null; E.planoHorizontal = false; }
   cont.classList.toggle("horizontal", false);
   cont.classList.add("con-lateral");
   cont.classList.toggle("plano-h", E.planoHorizontal);
@@ -368,8 +370,144 @@ function pintarPlano() {
     info: (z) => ({ ...infoZona(z), activa: !!E.espPlano && z.espacio_id === E.espPlano }),
     horizontal: E.planoHorizontal,
   });
-  cont.innerHTML = `<div class="lienzo">${svg}</div><aside class="panel lateral-plano">${E.espPlano ? panelEspacio(E.espPlano) : panelResumen()}</aside>`;
+  cont.innerHTML = `<div class="lienzo navegable">${svg}
+      <div class="mandos-plano">
+        <button type="button" class="btn icono" data-zoom="1.4" aria-label="Acercar" title="Acercar">＋</button>
+        <button type="button" class="btn icono" data-zoom="0.7" aria-label="Alejar" title="Alejar">－</button>
+        <button type="button" class="btn icono" data-zoom="0" aria-label="Ver el plano entero" title="Ver el plano entero">⤢</button>
+      </div>
+    </div><aside class="panel lateral-plano">${E.espPlano ? panelEspacio(E.espPlano) : panelResumen()}</aside>`;
+  aplicarVista();
 }
+
+// ---------------- Navegar por el plano (arrastrar y acercar) ----------------
+const VB_BASE = { v: { x: 120, y: 160, w: 866, h: 2070 }, h: { x: 160, y: -986, w: 2070, h: 866 } };
+function svgPlanoActual() { return $("#vista-plano .lienzo.navegable svg"); }
+// Encuadre que muestra el plano entero con la proporción del recuadro
+function vbEntero() {
+  const s = svgPlanoActual(), b = VB_BASE[E.planoHorizontal ? "h" : "v"];
+  const r = s.getBoundingClientRect(), ar = r.width / Math.max(1, r.height);
+  return ar > b.w / b.h
+    ? { x: b.x - (b.h * ar - b.w) / 2, y: b.y, w: b.h * ar, h: b.h }
+    : { x: b.x, y: b.y - (b.w / ar - b.h) / 2, w: b.w, h: b.w / ar };
+}
+function aplicarVista() {
+  const s = svgPlanoActual();
+  if (!s) return;
+  const entero = vbEntero();
+  if (!E.vb) E.vb = { ...entero };
+  // Mantener la proporción del recuadro y no alejarse más que el plano entero ni acercarse más de 8×
+  const r = s.getBoundingClientRect(), ar = r.width / Math.max(1, r.height);
+  E.vb.w = Math.min(entero.w, Math.max(entero.w / 8, E.vb.w));
+  E.vb.h = E.vb.w / ar;
+  // No dejar que el plano se salga del todo
+  E.vb.x = Math.min(Math.max(E.vb.x, entero.x - E.vb.w * 0.5), entero.x + entero.w - E.vb.w * 0.5);
+  E.vb.y = Math.min(Math.max(E.vb.y, entero.y - E.vb.h * 0.5), entero.y + entero.h - E.vb.h * 0.5);
+  s.setAttribute("viewBox", `${E.vb.x} ${E.vb.y} ${E.vb.w} ${E.vb.h}`);
+  s.classList.toggle("ampliado", E.vb.w < entero.w * 0.98);
+}
+function puntoSvg(clientX, clientY) {
+  const s = svgPlanoActual(), r = s.getBoundingClientRect();
+  return [E.vb.x + ((clientX - r.left) / r.width) * E.vb.w, E.vb.y + ((clientY - r.top) / r.height) * E.vb.h];
+}
+function zoomEn(f, clientX, clientY) {
+  const s = svgPlanoActual();
+  if (!s || !E.vb) return;
+  const r = s.getBoundingClientRect();
+  if (clientX == null) { clientX = r.left + r.width / 2; clientY = r.top + r.height / 2; }
+  const [px, py] = puntoSvg(clientX, clientY);
+  const w = E.vb.w / f;
+  E.vb = { x: px - (px - E.vb.x) * (w / E.vb.w), y: py - (py - E.vb.y) * (w / E.vb.w), w, h: E.vb.h };
+  aplicarVista();
+}
+// Encuadra un espacio en una parte del recuadro (en el móvil, la parte que queda por encima del panel)
+function encuadrarEspacio(espId, areaVisible) {
+  const s = svgPlanoActual();
+  const zs = E.zonas.filter((z) => z.espacio_id === espId);
+  if (!s || !zs.length) return;
+  let pts = zs.flatMap((z) => z.poligonos.flat());
+  if (E.planoHorizontal) pts = pts.map(([x, y]) => [y, -x]);
+  const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+  const bx = Math.min(...xs), by = Math.min(...ys), bw = Math.max(...xs) - bx, bh = Math.max(...ys) - by;
+  const r = s.getBoundingClientRect();
+  const a = areaVisible ?? { top: r.top, bottom: r.bottom };
+  const top = Math.max(r.top, a.top), bottom = Math.min(r.bottom, a.bottom);
+  if (bottom - top < 60) return;
+  const entero = vbEntero();
+  // Escala (px por unidad): que el espacio quepa con margen, sin pasar de 4× ni alejar más que el plano entero
+  let esc = Math.min(r.width / (bw * 1.6), (bottom - top) / (bh * 1.6));
+  esc = Math.max(r.width / entero.w, Math.min(esc, (r.width / entero.w) * 4));
+  const w = r.width / esc, h = r.height / esc;
+  const cx = bx + bw / 2, cy = by + bh / 2;
+  const centroY = (top + bottom) / 2 - r.top;
+  E.vb = { x: cx - w / 2, y: cy - centroY / esc, w, h };
+  aplicarVista();
+}
+(() => {
+  const punteros = new Map();
+  let arrastre = null, arrastrado = false;
+  const cont = $("#vista-plano");
+  cont.addEventListener("pointerdown", (e) => {
+    if (E.editor || !e.target.closest(".lienzo.navegable svg")) return;
+    punteros.set(e.pointerId, [e.clientX, e.clientY]);
+    arrastrado = false;
+    arrastre = { inicio: [e.clientX, e.clientY], vb: { ...E.vb }, dist: null };
+    if (punteros.size === 2) {
+      const [[x1, y1], [x2, y2]] = [...punteros.values()];
+      arrastre.dist = Math.hypot(x2 - x1, y2 - y1);
+      arrastre.centro = [(x1 + x2) / 2, (y1 + y2) / 2];
+    }
+  });
+  window.addEventListener("pointermove", (e) => {
+    if (!arrastre || !punteros.has(e.pointerId) || !E.vb) return;
+    punteros.set(e.pointerId, [e.clientX, e.clientY]);
+    const s = svgPlanoActual();
+    if (!s) return;
+    const r = s.getBoundingClientRect();
+    if (punteros.size >= 2 && arrastre.dist) {
+      const [[x1, y1], [x2, y2]] = [...punteros.values()];
+      const d = Math.hypot(x2 - x1, y2 - y1);
+      E.vb = { ...arrastre.vb };
+      zoomEn(d / arrastre.dist, arrastre.centro[0], arrastre.centro[1]);
+      arrastrado = true;
+      return;
+    }
+    const dx = e.clientX - arrastre.inicio[0], dy = e.clientY - arrastre.inicio[1];
+    if (!arrastrado && Math.hypot(dx, dy) < 6) return;
+    arrastrado = true;
+    s.classList.add("arrastrando-plano");
+    E.vb = { ...E.vb, x: arrastre.vb.x - (dx / r.width) * arrastre.vb.w, y: arrastre.vb.y - (dy / r.height) * arrastre.vb.h };
+    aplicarVista();
+  });
+  const fin = (e) => {
+    if (!punteros.has(e.pointerId)) return; // no empezó en el plano
+    punteros.delete(e.pointerId);
+    if (punteros.size) { arrastre = { inicio: [...punteros.values()][0], vb: { ...E.vb }, dist: null }; return; }
+    svgPlanoActual()?.classList.remove("arrastrando-plano");
+    if (arrastrado) {
+      // Tras arrastrar no se cuenta como toque en una zona
+      const parar = (ev) => { ev.stopPropagation(); ev.preventDefault(); };
+      window.addEventListener("click", parar, { capture: true, once: true });
+      setTimeout(() => window.removeEventListener("click", parar, { capture: true }), 60);
+    }
+    arrastre = null;
+    arrastrado = false;
+  };
+  window.addEventListener("pointerup", fin);
+  window.addEventListener("pointercancel", fin);
+  cont.addEventListener("wheel", (e) => {
+    if (E.editor || !e.target.closest(".lienzo.navegable")) return;
+    e.preventDefault();
+    zoomEn(Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)), e.clientX, e.clientY);
+  }, { passive: false });
+  cont.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-zoom]");
+    if (!b) return;
+    e.stopPropagation();
+    const f = +b.dataset.zoom;
+    if (!f) { E.vb = null; aplicarVista(); } else zoomEn(f);
+  }, true);
+})();
 
 // Panel lateral sin espacio elegido: resumen de la casa
 function panelResumen() {
@@ -1741,19 +1879,14 @@ function elegirEspacioPlano(id) {
   E.espPlano = id;
   E.catPlano = null;
   pintarPlano();
-  // En el móvil el panel sale abajo: desplazamos el plano para que el espacio elegido quede visible encima
-  if (id && !pantallaAncha()) setTimeout(() => {
-    const zona = $("#vista-plano .zona.activa");
+  // En el móvil el panel sale abajo: encuadramos el espacio elegido en la parte del plano que queda visible
+  if (id && id !== "sin" && !pantallaAncha()) requestAnimationFrame(() => {
     const hoja = $(".lateral-plano");
-    if (!zona || !hoja) return;
-    const r = zona.getBoundingClientRect();
-    const libreArriba = 130, libreAbajo = innerHeight - hoja.getBoundingClientRect().height;
-    const objetivo = libreArriba + (libreAbajo - libreArriba) / 2;
-    window.scrollBy({ top: r.top + r.height / 2 - objetivo, behavior: "smooth" });
-  }, 40);
+    if (hoja) encuadrarEspacio(id, { top: 0, bottom: hoja.getBoundingClientRect().top });
+  });
 }
 let tRedimensionar;
-window.addEventListener("resize", () => { clearTimeout(tRedimensionar); tRedimensionar = setTimeout(() => { if (E.vista === "plano" && !E.editor) pintarPlano(); }, 150); });
+window.addEventListener("resize", () => { clearTimeout(tRedimensionar); tRedimensionar = setTimeout(() => { if (E.vista === "plano" && !E.editor) { E.vb = null; pintarPlano(); } }, 150); });
 // Girar el plano al cambiar entre pantalla ancha y estrecha
 matchMedia("(min-width: 900px)").addEventListener("change", () => {
   if (E.editor) { $("#vista-plano").classList.toggle("horizontal", esHorizontal()); E.editor.pintar(); }
@@ -1767,8 +1900,8 @@ $("#vista-plano").addEventListener("mouseover", (e) => {
   if (E.editor) return;
   const fila = e.target.closest("[data-zonas]");
   const g = e.target.closest(".zona");
-  $$("#vista-plano .zona.activa, #vista-plano .fila-espacio.resaltada").forEach((x) => x.classList.remove("activa", "resaltada"));
-  if (fila) fila.dataset.zonas.split(" ").filter(Boolean).forEach((id) => $(`#vista-plano .zona[data-zona="${id}"]`)?.classList.add("activa"));
+  $$("#vista-plano .zona.resaltada, #vista-plano .fila-espacio.resaltada").forEach((x) => x.classList.remove("resaltada"));
+  if (fila) fila.dataset.zonas.split(" ").filter(Boolean).forEach((id) => $(`#vista-plano .zona[data-zona="${id}"]`)?.classList.add("resaltada"));
   if (g) {
     const esp = espacioDeZona(zonaPorId(g.dataset.zona));
     if (esp) $(`#vista-plano .fila-espacio[data-ver-esp="${esp.id}"]`)?.classList.add("resaltada");
