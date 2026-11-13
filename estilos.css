@@ -297,3 +297,6 @@ body.seleccionando .principal { padding-bottom: 140px; }
 @media (hover: none) { .btn-borrar-titulo { opacity: .55; } }
 .btn.peligro-fuerte { background: var(--rojo); border-color: var(--rojo); }
 .btn.peligro-fuerte:hover { background: #8f1c13; border-color: #8f1c13; }
+
+.barra-sel .btn.sel-borrar { color: #ffb4a8; }
+.barra-sel .btn.sel-borrar:hover:not(:disabled) { background: var(--rojo); border-color: var(--rojo); color: #fff; }

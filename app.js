@@ -1457,7 +1457,7 @@ function pintarBarraSel() {
   const qe = $("#sel-quitar-esp");
   qe.hidden = !es;
   if (es) qe.textContent = `Quitar de 📍${es.nombre}`;
-  ["#sel-esps", "#sel-quitar-esp"].forEach((s) => ($(s).disabled = !n));
+  ["#sel-esps", "#sel-quitar-esp", "#sel-borrar"].forEach((s) => ($(s).disabled = !n));
 }
 $("#btn-seleccionar").onclick = () => (E.modoSel ? salirSeleccion() : entrarSeleccion());
 $("#sel-cancelar").onclick = salirSeleccion;
@@ -1501,6 +1501,19 @@ $("#sel-quitar").onclick = async () => {
   if (error) return tostada("Error: " + error.message);
   salirSeleccion(); await cargar();
   tostada(`${ids.length} producto(s) quitados de «${c.nombre}»`);
+};
+
+// Eliminar productos en bloque
+$("#sel-borrar").onclick = async () => {
+  if (!E.sel.size) return;
+  const ids = [...E.sel];
+  const nombres = ids.map((id) => E.prods.find((p) => p.id === id)?.nombre).filter(Boolean);
+  const lista = nombres.slice(0, 5).map((n) => "• " + n).join("\n") + (nombres.length > 5 ? `\n… y ${nombres.length - 5} más` : "");
+  if (!confirm(`¿Eliminar ${ids.length} producto(s) con todas sus ofertas e historial de precios?\n\n${lista}\n\nNo se puede deshacer.`)) return;
+  const { error } = await sb.from("productos").delete().in("id", ids);
+  if (error) return tostada("Error: " + error.message);
+  salirSeleccion(); await cargar();
+  tostada(`${ids.length} producto(s) eliminados`);
 };
 
 // Quitar del espacio actual
