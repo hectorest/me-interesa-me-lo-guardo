@@ -250,3 +250,27 @@ label { display: grid; gap: 6px; font-size: 13px; font-weight: 500; color: var(-
 /* El título editable conserva su tamaño grande también en el móvil (≥16px, así iOS no hace zoom) */
 .barra-filtros .titulo-editable { font-size: inherit !important; }
 .titulo-envoltura:focus-within .lapiz { opacity: 0 !important; }
+
+/* Selección múltiple */
+.tarjeta.en-seleccion .acciones { display: none; }
+.tarjeta.en-seleccion { user-select: none; -webkit-user-select: none; }
+.tarjeta.en-seleccion:hover { transform: none; }
+.tarjeta.seleccionada { border-color: var(--acento); box-shadow: 0 0 0 2px var(--acento); }
+.casilla { position: absolute; z-index: 2; top: 10px; right: 10px; width: 26px; height: 26px; border-radius: 8px; border: 2px solid #cfc4b4; background: #fff; display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 15px; }
+.tarjeta.seleccionada .casilla { background: var(--acento); border-color: var(--acento); }
+.tarjeta.en-seleccion .insignia.estado { right: 44px; }
+.barra-sel { position: fixed; z-index: 50; left: 50%; bottom: 16px; transform: translateX(-50%); width: min(760px, calc(100vw - 24px)); background: var(--tinta); color: #fff; border-radius: 14px; padding: 10px 12px; display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: space-between; box-shadow: 0 10px 30px rgba(0,0,0,.25); padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
+.barra-sel a { color: #ffd2bf; }
+.barra-sel-acciones { display: flex; flex-wrap: wrap; gap: 6px; }
+.barra-sel .btn:not(.primario) { background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.2); color: #fff; }
+.barra-sel select.btn { width: auto; padding: 5px 8px; font-size: 13px; }
+.barra-sel select.btn option { color: var(--tinta); }
+body.seleccionando .principal { padding-bottom: 140px; }
+.opciones-masivo { display: grid; gap: 8px; }
+.opciones-masivo label { display: flex; flex-direction: row; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--linea); border-radius: 10px; background: #fff; color: var(--tinta); font-weight: 400; font-size: 14px; cursor: pointer; }
+.opciones-masivo label:has(input:checked) { border-color: var(--acento); background: var(--acento-suave); }
+@media (max-width: 820px) {
+  .barra-sel { bottom: 10px; }
+  .barra-sel-info { flex-basis: 100%; }
+  .barra-sel select.btn { font-size: 16px !important; }
+}

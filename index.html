@@ -80,6 +80,7 @@
               <option value="nombre">Nombre</option>
             </select>
             <label class="interruptor"><input type="checkbox" id="f-bajadas"> Solo bajadas</label>
+            <button class="btn mini" id="btn-seleccionar" title="Seleccionar varios productos">☑ Seleccionar</button>
           </div>
         </div>
         <div id="rejilla" class="rejilla"></div>
@@ -130,6 +131,41 @@
       <button class="btn icono" value="cerrar" aria-label="Cerrar">✕</button>
     </form>
     <div class="dlg-cuerpo" id="ajustes"></div>
+  </dialog>
+
+  <!-- Barra de selección múltiple -->
+  <div id="barra-sel" class="barra-sel" hidden>
+    <div class="barra-sel-info"><b id="sel-n">0</b> seleccionados · <a href="#" id="sel-todo">Seleccionar todo</a></div>
+    <div class="barra-sel-acciones">
+      <button class="btn mini primario" id="sel-cats">Cambiar categorías…</button>
+      <button class="btn mini" id="sel-quitar" hidden></button>
+      <select id="sel-estado" class="btn mini" aria-label="Cambiar estado">
+        <option value="">Marcar como…</option>
+        <option value="pendiente">Pendiente</option>
+        <option value="comprado">Comprado</option>
+        <option value="descartado">Descartado</option>
+      </select>
+      <button class="btn mini" id="sel-cancelar">Cancelar</button>
+    </div>
+  </div>
+
+  <!-- Diálogo: categorías en bloque -->
+  <dialog id="dlg-masivo" class="dialogo">
+    <form method="dialog" class="dlg-cab">
+      <h3 id="masivo-titulo">Cambiar categorías</h3>
+      <button class="btn icono" value="cerrar" aria-label="Cerrar">✕</button>
+    </form>
+    <div class="dlg-cuerpo">
+      <div class="opciones-masivo">
+        <label><input type="radio" name="modo-masivo" value="anadir" checked> <span><b>Añadir</b> estas categorías<br><small class="pequeno">Los productos conservan las que ya tenían.</small></span></label>
+        <label><input type="radio" name="modo-masivo" value="mover"> <span><b>Mover</b> a estas categorías<br><small class="pequeno">Se sustituyen todas las categorías que tuvieran.</small></span></label>
+      </div>
+      <div id="masivo-cats"></div>
+      <div class="pie-dlg">
+        <button type="button" class="btn" id="masivo-cancelar">Cancelar</button>
+        <button type="button" class="btn primario" id="masivo-aplicar">Aplicar</button>
+      </div>
+    </div>
   </dialog>
 
   <div id="tostada" class="tostada" hidden></div>

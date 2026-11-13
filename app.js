@@ -270,6 +270,7 @@ function pintarRejilla() {
   lista = lista.sort(ord);
 
   pintarTitulo();
+  if (E.modoSel) setTimeout(pintarBarraSel, 0);
   $("#rejilla").innerHTML = lista.map(tarjeta).join("");
   const vacio = $("#vacio");
   if (!lista.length) {
@@ -334,8 +335,10 @@ function tarjeta(p) {
   const baja = Math.max(0, ...p.ofertas.map(bajadaReciente));
   const dto = o?.precio_original && o.precio ? Math.round((1 - o.precio / o.precio_original) * 100) : 0;
   const nTiendas = new Set(p.ofertas.map((x) => x.tienda)).size;
-  return `<article class="tarjeta ${p.estado !== "pendiente" ? "apagada" : ""}" data-producto="${p.id}">
+  const sel = E.modoSel && E.sel.has(p.id);
+  return `<article class="tarjeta ${p.estado !== "pendiente" ? "apagada" : ""} ${E.modoSel ? "en-seleccion" : ""} ${sel ? "seleccionada" : ""}" data-producto="${p.id}">
     <div class="foto">
+      ${E.modoSel ? `<span class="casilla" aria-hidden="true">${sel ? "✓" : ""}</span>` : ""}
       ${img(p.imagen || o?.imagen, p.nombre)}
       ${baja ? `<span class="insignia">↓ ${euros(baja)}</span>` : ""}
       ${p.estado !== "pendiente" ? `<span class="insignia estado">${p.estado === "comprado" ? "Comprado" : "Descartado"}</span>` : ""}
@@ -1194,8 +1197,131 @@ document.addEventListener("click", (e) => {
   if (e.target.closest("[data-accion=anadir]")) { abrirAnadir(); return; }
   if (e.target.closest("[data-accion=ayuda]")) { e.preventDefault(); $$("dialog[open]").forEach((d) => d.close()); abrirAjustes(); return; }
   const t = e.target.closest(".tarjeta");
-  if (t) abrirDetalle(t.dataset.producto);
+  if (!t) return;
+  if (E.modoSel) { e.preventDefault(); alternarSeleccion(t.dataset.producto); return; }
+  abrirDetalle(t.dataset.producto);
 });
+
+// ---------------- Selección múltiple ----------------
+E.modoSel = false;
+E.sel = new Set();
+function entrarSeleccion(id) {
+  E.modoSel = true;
+  if (id) E.sel.add(id);
+  document.body.classList.add("seleccionando");
+  pintarRejilla(); pintarBarraSel();
+}
+function salirSeleccion() {
+  E.modoSel = false; E.sel.clear();
+  document.body.classList.remove("seleccionando");
+  pintarRejilla(); pintarBarraSel();
+}
+function alternarSeleccion(id) {
+  E.sel.has(id) ? E.sel.delete(id) : E.sel.add(id);
+  const t = $(`.tarjeta[data-producto="${id}"]`);
+  if (t) {
+    t.classList.toggle("seleccionada", E.sel.has(id));
+    const c = $(".casilla", t); if (c) c.textContent = E.sel.has(id) ? "✓" : "";
+  }
+  pintarBarraSel();
+}
+function pintarBarraSel() {
+  const b = $("#barra-sel");
+  b.hidden = !E.modoSel;
+  $("#btn-seleccionar").textContent = E.modoSel ? "✕ Salir de selección" : "☑ Seleccionar";
+  if (!E.modoSel) return;
+  const n = E.sel.size;
+  $("#sel-n").textContent = n;
+  const visibles = $$(".tarjeta").map((t) => t.dataset.producto);
+  $("#sel-todo").textContent = visibles.length && visibles.every((id) => E.sel.has(id)) ? "Quitar selección" : "Seleccionar todo";
+  ["#sel-cats", "#sel-estado", "#sel-quitar"].forEach((s) => ($(s).disabled = !n));
+  const c = E.filtro.cat !== "todas" && E.filtro.cat !== "sin" ? catPorId(E.filtro.cat) : null;
+  const q = $("#sel-quitar");
+  q.hidden = !c;
+  if (c) q.textContent = `Quitar de «${c.nombre}»`;
+}
+$("#btn-seleccionar").onclick = () => (E.modoSel ? salirSeleccion() : entrarSeleccion());
+$("#sel-cancelar").onclick = salirSeleccion;
+$("#sel-todo").onclick = (e) => {
+  e.preventDefault();
+  const visibles = $$(".tarjeta").map((t) => t.dataset.producto);
+  const todos = visibles.every((id) => E.sel.has(id));
+  visibles.forEach((id) => (todos ? E.sel.delete(id) : E.sel.add(id)));
+  pintarRejilla(); pintarBarraSel();
+};
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && E.modoSel && !$("dialog[open]")) salirSeleccion(); });
+
+// Mantener pulsada una tarjeta (móvil) entra en modo selección
+let tPulsacion;
+document.addEventListener("touchstart", (e) => {
+  const t = e.target.closest(".tarjeta");
+  if (!t || E.modoSel || e.target.closest("[data-parar]")) return;
+  tPulsacion = setTimeout(() => { tPulsacion = "hecho"; entrarSeleccion(t.dataset.producto); navigator.vibrate?.(20); }, 550);
+}, { passive: true });
+["touchend", "touchmove", "touchcancel"].forEach((ev) => document.addEventListener(ev, () => { if (tPulsacion !== "hecho") clearTimeout(tPulsacion); }, { passive: true }));
+document.addEventListener("click", (e) => { if (tPulsacion === "hecho") { tPulsacion = null; e.stopPropagation(); e.preventDefault(); } }, true);
+
+// Cambiar estado en bloque
+$("#sel-estado").onchange = async (e) => {
+  const estado = e.target.value; e.target.value = "";
+  if (!estado || !E.sel.size) return;
+  const ids = [...E.sel];
+  const { error } = await sb.from("productos").update({ estado }).in("id", ids);
+  if (error) return tostada("Error: " + error.message);
+  salirSeleccion(); await cargar();
+  tostada(`${ids.length} producto(s) marcados como ${estado}`);
+};
+
+// Quitar de la categoría actual (y sus subcategorías)
+$("#sel-quitar").onclick = async () => {
+  const c = catPorId(E.filtro.cat);
+  if (!c || !E.sel.size) return;
+  const ids = [...E.sel];
+  const cats = [...descendientes(c.id)];
+  const { error } = await sb.from("producto_categorias").delete().in("producto_id", ids).in("categoria_id", cats);
+  if (error) return tostada("Error: " + error.message);
+  salirSeleccion(); await cargar();
+  tostada(`${ids.length} producto(s) quitados de «${c.nombre}»`);
+};
+
+// Añadir / mover a categorías en bloque
+let selMasivo = [];
+$("#sel-cats").onclick = () => {
+  if (!E.sel.size) return;
+  selMasivo = [];
+  $("#masivo-titulo").textContent = `Cambiar categorías de ${E.sel.size} producto(s)`;
+  $$('input[name="modo-masivo"]').forEach((r) => (r.checked = r.value === "anadir"));
+  selectorCats($("#masivo-cats"), selMasivo);
+  $("#dlg-masivo").showModal();
+  setTimeout(() => $("#masivo-cats [data-entrada]")?.focus(), 50);
+};
+$("#masivo-cancelar").onclick = () => $("#dlg-masivo").close();
+$("#masivo-aplicar").onclick = async (e) => {
+  const modo = $('input[name="modo-masivo"]:checked').value;
+  // Si se ha escrito algo en el campo sin pulsar «Añadir», lo añadimos
+  const pendiente = $("#masivo-cats [data-entrada]");
+  if (pendiente?.value.trim()) $("#masivo-cats [data-anadir]").click();
+  if (!selMasivo.length && modo === "anadir") return tostada("Elige al menos una categoría");
+  if (!selMasivo.length && !confirm("No has elegido ninguna categoría: los productos se quedarán sin categoría. ¿Continuar?")) return;
+  const btn = e.target; btn.disabled = true;
+  try {
+    const catIds = await resolverCats(selMasivo);
+    const ids = [...E.sel];
+    if (modo === "mover") {
+      const { error } = await sb.from("producto_categorias").delete().in("producto_id", ids);
+      if (error) throw error;
+    }
+    if (catIds.length) {
+      const filas = ids.flatMap((p) => catIds.map((c) => ({ producto_id: p, categoria_id: c })));
+      const { error } = await sb.from("producto_categorias").upsert(filas, { ignoreDuplicates: true });
+      if (error) throw error;
+    }
+    $("#dlg-masivo").close();
+    salirSeleccion(); await cargar();
+    tostada(`${ids.length} producto(s) ${modo === "mover" ? "movidos" : "actualizados"} ✓`);
+  } catch (err) { tostada("Error: " + err.message, 6000); }
+  finally { btn.disabled = false; }
+};
 
 // Cerrar diálogos al pulsar fuera
 $$("dialog").forEach((d) => d.addEventListener("click", (e) => { if (e.target === d) d.close(); }));
