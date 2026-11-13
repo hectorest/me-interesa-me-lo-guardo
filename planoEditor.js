@@ -2,7 +2,7 @@
 import { COLORES, SUELO, puntoEnPoligono, dividirPoligono } from "./plano.js";
 
 const AYUDA = {
-  mover: "Toca una zona para elegirla. Arrastra sus <b>puntos</b> para mover los límites, o un <b>punto pequeño</b> de un borde para añadir una esquina. Doble clic en una esquina la borra. Arrastrando la zona elegida la mueves entera.",
+  mover: "Toca una zona para elegirla. Arrastra sus <b>puntos</b> para mover los límites, o un <b>punto pequeño</b> de un borde para añadir una esquina. Para <b>quitar una esquina</b>, tócala y pulsa «Quitar esquina» (o doble clic sobre ella, o la tecla Supr). Arrastrando la zona elegida la mueves entera.",
   rect: "Arrastra sobre el plano para dibujar una zona rectangular.",
   poligono: "Toca para poner cada esquina. Toca el <b>primer punto</b> (o pulsa Intro) para cerrar la zona. Esc cancela.",
   dividir: "Traza una línea que cruce de lado a lado la zona que quieres partir: toca donde empieza y donde acaba (o arrastra). Quedan dos zonas.",
@@ -108,6 +108,7 @@ export class EditorPlano {
     this.fut.push(JSON.stringify(this.zonas));
     this.zonas = JSON.parse(this.hist.pop());
     if (!this.zona()) this.sel = null;
+    this.vsel = null;
     this.pintar(); this.pintarPanel();
   }
   rehacer() {
@@ -115,6 +116,7 @@ export class EditorPlano {
     this.hist.push(JSON.stringify(this.zonas));
     this.zonas = JSON.parse(this.fut.pop());
     if (!this.zona()) this.sel = null;
+    this.vsel = null;
     this.pintar(); this.pintarPanel();
   }
   colorLibre() {
@@ -138,7 +140,7 @@ export class EditorPlano {
   }
   cambiarHerramienta(h) {
     this.herramienta = h;
-    this.borrador = []; this.linea = null; this.rect = null;
+    this.borrador = []; this.linea = null; this.rect = null; this.vsel = null;
     this.pintar(); this.pintarPanel();
   }
 
@@ -149,8 +151,10 @@ export class EditorPlano {
     const t = e.target;
     e.preventDefault();
     if (t.closest?.(".asa[data-v]")) {
-      this.guardarHistoria();
-      this.arr = { tipo: "vertice", pi: +t.dataset.pi, vi: +t.dataset.v };
+      this.vsel = { pi: +t.dataset.pi, vi: +t.dataset.v };
+      this.arr = { tipo: "vertice", pi: +t.dataset.pi, vi: +t.dataset.v, movido: false };
+      t.classList.add("elegida");
+      this.pintarPanel();
       return;
     }
     if (t.closest?.(".asa-medio")) {
@@ -158,15 +162,17 @@ export class EditorPlano {
       const pi = +t.dataset.pi, m = +t.dataset.m, p = this.zona().poligonos[pi];
       const a = p[m], b = p[(m + 1) % p.length];
       p.splice(m + 1, 0, [Math.round((a[0] + b[0]) / 2), Math.round((a[1] + b[1]) / 2)]);
-      this.arr = { tipo: "vertice", pi, vi: m + 1 };
+      this.arr = { tipo: "vertice", pi, vi: m + 1, movido: true };
+      this.vsel = { pi, vi: m + 1 };
       this.pintar();
       return;
     }
     const h = this.herramienta;
     if (h === "mover") {
       const z = this.zonaEn(pt);
-      if (!z) { this.sel = null; this.pintar(); this.pintarPanel(); return; }
-      if (z.id !== this.sel) { this.sel = z.id; this.pintar(); this.pintarPanel(); }
+      if (!z) { this.sel = null; this.vsel = null; this.pintar(); this.pintarPanel(); return; }
+      if (z.id !== this.sel) { this.sel = z.id; this.vsel = null; this.pintar(); this.pintarPanel(); }
+      else if (this.vsel) { this.vsel = null; this.pintar(); this.pintarPanel(); }
       this.arr = { tipo: "zona", inicio: pt, orig: copiar(z.poligonos), movido: false };
     } else if (h === "rect") {
       const a = this.iman(pt);
@@ -196,6 +202,7 @@ export class EditorPlano {
     const pt = this.puntoPlano(e);
     const a = this.arr;
     if (a?.tipo === "vertice") {
+      if (!a.movido) { this.guardarHistoria(); a.movido = true; }
       const z = this.zona();
       z.poligonos[a.pi][a.vi] = this.iman(pt, { zona: z.id, pi: a.pi, vi: a.vi });
       this.pintar();
@@ -238,15 +245,21 @@ export class EditorPlano {
   doble(e) {
     const t = e.target.closest?.(".asa[data-v]");
     if (!t) return;
-    const p = this.zona()?.poligonos[+t.dataset.pi];
-    if (!p || p.length <= 3) return this.op.tostada("Una zona necesita al menos 3 esquinas");
+    this.quitarVertice(+t.dataset.pi, +t.dataset.v);
+  }
+  quitarVertice(pi, vi) {
+    const p = this.zona()?.poligonos[pi];
+    if (!p) return;
+    if (p.length <= 3) return this.op.tostada("Una zona necesita al menos 3 esquinas");
     this.guardarHistoria();
-    p.splice(+t.dataset.v, 1);
-    this.pintar();
+    p.splice(vi, 1);
+    this.vsel = null;
+    this.pintar(); this.pintarPanel();
   }
   tecla(e) {
     if (e.target.matches?.("input, textarea, select")) return;
-    if (e.key === "Escape") { this.borrador = []; this.linea = null; this.rect = null; this.pintar(); }
+    if (e.key === "Escape") { this.borrador = []; this.linea = null; this.rect = null; this.vsel = null; this.pintar(); this.pintarPanel(); }
+    if ((e.key === "Delete" || e.key === "Backspace") && this.vsel) { e.preventDefault(); this.quitarVertice(this.vsel.pi, this.vsel.vi); }
     if (e.key === "Enter" && this.herramienta === "poligono") this.cerrarPoligono();
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") { e.preventDefault(); e.shiftKey ? this.rehacer() : this.deshacer(); }
   }
@@ -297,7 +310,7 @@ export class EditorPlano {
   pintar() {
     if (!this.lienzo) return;
     this.lienzo.innerHTML = this.op.svgDe(this.zonas, {
-      sel: this.sel, herramienta: this.herramienta, uPorPx: this.uPorPx(),
+      sel: this.sel, herramienta: this.herramienta, uPorPx: this.uPorPx(), vsel: this.vsel,
       borrador: this.borrador, linea: this.linea, rect: this.rect, cursor: this.cursor,
     });
   }
@@ -327,6 +340,7 @@ export class EditorPlano {
               <option value="__nuevo">＋ Nuevo espacio…</option>
             </select>
           </label>
+          ${this.vsel ? `<div class="aviso-vertice"><span>Esquina elegida</span><button type="button" class="btn mini peligro" data-acc="quitar-vertice">✕ Quitar esquina</button></div>` : ""}
           <div class="fila-botones">
             <button type="button" class="btn mini" data-acc="deseleccionar">Elegir otra zona</button>
             <button type="button" class="btn mini peligro" data-acc="eliminar">🗑 Eliminar zona</button>
@@ -346,12 +360,13 @@ export class EditorPlano {
     const b = e.target.closest("button");
     if (!b) return;
     if (b.dataset.herr) return this.cambiarHerramienta(b.dataset.herr);
-    if (b.dataset.elegir) { this.sel = b.dataset.elegir; this.herramienta = "mover"; this.pintar(); this.pintarPanel(); return; }
+    if (b.dataset.elegir) { this.sel = b.dataset.elegir; this.vsel = null; this.herramienta = "mover"; this.pintar(); this.pintarPanel(); return; }
     if (b.dataset.color) { this.guardarHistoria(); this.zona().color = b.dataset.color; this.pintar(); this.pintarPanel(); return; }
     switch (b.dataset.acc) {
       case "deshacer": return this.deshacer();
       case "rehacer": return this.rehacer();
-      case "deseleccionar": this.sel = null; this.pintar(); this.pintarPanel(); return;
+      case "deseleccionar": this.sel = null; this.vsel = null; this.pintar(); this.pintarPanel(); return;
+      case "quitar-vertice": if (this.vsel) this.quitarVertice(this.vsel.pi, this.vsel.vi); return;
       case "eliminar": {
         const z = this.zona();
         if (!confirm(`¿Eliminar la zona «${z.nombre}»? Los productos no se borran.`)) return;

@@ -437,3 +437,6 @@ body.editando-plano .plano .zona.seleccionada polygon { fill-opacity: 1; stroke:
   .editor-barra .btn { font-size: 13px !important; padding: 6px 8px; }
   .lista-zonas { grid-template-columns: 1fr 1fr; }
 }
+
+.plano .asa.elegida { fill: var(--acento); }
+.aviso-vertice { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; background: var(--acento-suave); border-radius: 10px; font-size: 14px; color: var(--acento-2); }

@@ -177,7 +177,7 @@ export function svgPlano({ zonas, info, horizontal = false, edicion = null }) {
           const s = p[(vi + 1) % p.length], m = [(q[0] + s[0]) / 2, (q[1] + s[1]) / 2];
           return `<circle class="asa-medio" data-pi="${pi}" data-m="${vi}" cx="${m[0]}" cy="${m[1]}" r="${rm}" style="stroke-width:${sw}px"/>`;
         }).join("") +
-        p.map((q, vi) => `<circle class="asa" data-pi="${pi}" data-v="${vi}" cx="${q[0]}" cy="${q[1]}" r="${r}" style="stroke-width:${sw}px"/>`).join("")).join("");
+        p.map((q, vi) => `<circle class="asa ${edicion.vsel?.pi === pi && edicion.vsel?.vi === vi ? "elegida" : ""}" data-pi="${pi}" data-v="${vi}" cx="${q[0]}" cy="${q[1]}" r="${r}" style="stroke-width:${sw}px"/>`).join("")).join("");
     }
     if (edicion.borrador?.length) {
       const b = edicion.borrador, c = edicion.cursor;
