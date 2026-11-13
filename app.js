@@ -483,6 +483,80 @@ document.addEventListener("click", (e) => {
   if (p) cambiarElegidos([p.id], !elegido(p));
 }, true);
 
+// ---------------- Precios de una categoría: estadísticas y escala de color ----------------
+// Se compara el precio por unidad (los packs se dividen entre sus unidades).
+const precioUnidad = (p) => { const v = mejorOferta(p)?.precio; return v ? v / (p.pack_unidades || 1) : null; };
+function pasoRedondo(x) {
+  const e = Math.pow(10, Math.floor(Math.log10(x))), f = x / e;
+  return (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * e;
+}
+function estadisticas(lista) {
+  const items = lista.map((p) => ({ p, v: precioUnidad(p) })).filter((x) => x.v);
+  if (items.length < 3) return null;
+  const vs = items.map((x) => x.v).sort((a, b) => a - b);
+  const n = vs.length, min = vs[0], max = vs[n - 1];
+  const media = vs.reduce((s, v) => s + v, 0) / n;
+  const mediana = n % 2 ? vs[(n - 1) / 2] : (vs[n / 2 - 1] + vs[n / 2]) / 2;
+  // Moda: precio exacto repetido; si no hay, el tramo de precios más frecuente
+  const cuentas = new Map();
+  vs.forEach((v) => cuentas.set(v.toFixed(2), (cuentas.get(v.toFixed(2)) || 0) + 1));
+  const [exacta, nExacta] = [...cuentas].sort((a, b) => b[1] - a[1])[0];
+  let moda;
+  if (nExacta > 1) moda = { texto: euros(+exacta), detalle: `${nExacta} productos a ese precio` };
+  else {
+    const paso = pasoRedondo(Math.max(1, (max - min) / 5));
+    const tramos = new Map();
+    vs.forEach((v) => { const t = Math.floor(v / paso) * paso; tramos.set(t, (tramos.get(t) || 0) + 1); });
+    const [t, nt] = [...tramos].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0];
+    moda = nt > 1 ? { texto: `${euros(t).replace(/,00/, "")}–${euros(t + paso).replace(/,00/, "")}`, detalle: `tramo más repetido (${nt} productos)` } : { texto: "—", detalle: "ningún precio se repite" };
+  }
+  // Posición de cada producto (por orden de precio: 0 = el más barato, 1 = el más caro)
+  const orden = [...items].sort((a, b) => a.v - b.v);
+  const escala = new Map();
+  orden.forEach((x, i) => {
+    const iguales = orden.filter((y) => y.v === x.v);
+    const pos = orden.indexOf(iguales[0]) + (iguales.length - 1) / 2;
+    escala.set(x.p.id, { t: n > 1 ? pos / (n - 1) : 0.5, v: x.v, dif: (x.v - media) / media });
+  });
+  return { n, min, max, media, mediana, moda, escala, items, porUnidad: items.some((x) => x.p.pack_unidades) };
+}
+// Verde (barato) → amarillo → rojo (caro)
+const tonoEscala = (t) => Math.round(135 - 130 * t);
+const colorFondo = (t) => `hsl(${tonoEscala(t)} 62% 88%)`;
+const colorTexto = (t) => `hsl(${tonoEscala(t)} 60% 28%)`;
+const colorFuerte = (t) => `hsl(${tonoEscala(t)} 58% 46%)`;
+const etiquetaEscala = (t) => (t <= 0.2 ? "De los más baratos" : t < 0.4 ? "Barato" : t <= 0.6 ? "Precio medio" : t < 0.8 ? "Caro" : "De los más caros");
+function pastillaPrecio(p) {
+  const s = E.escalaActual?.get(p.id);
+  if (!s) return "";
+  const pct = Math.round(s.dif * 100);
+  return `<span class="pastilla-escala" style="background:${colorFondo(s.t)};color:${colorTexto(s.t)}" title="${etiquetaEscala(s.t)} en esta categoría (${pct > 0 ? "+" : ""}${pct}% respecto a la media)">${pct > 0 ? "+" : ""}${pct}%</span>`;
+}
+function panelEstadisticas(st, nombreCat) {
+  if (!st) return "";
+  const pos = (v) => (st.max === st.min ? 50 : ((v - st.min) / (st.max - st.min)) * 100);
+  const cifra = (t, v, d = "") => `<div class="cifra"><small>${t}</small><b>${v}</b>${d ? `<span>${d}</span>` : ""}</div>`;
+  return `<div class="panel-estadisticas">
+    <div class="est-cab"><b>Precios en ${esc(nombreCat)}</b><span class="pequeno">${st.n} productos${st.porUnidad ? " · precio por unidad (los packs se dividen)" : ""}</span></div>
+    <div class="cifras">
+      ${cifra("Mínimo", euros(st.min))}
+      ${cifra("Media", euros(st.media), `mediana ${euros(st.mediana)}`)}
+      ${cifra("Moda", st.moda.texto, st.moda.detalle)}
+      ${cifra("Máximo", euros(st.max))}
+    </div>
+    <div class="escala">
+      <div class="escala-barra"></div>
+      ${st.items.map(({ p, v }) => { const s = st.escala.get(p.id); return `<button type="button" class="escala-punto" data-producto-escala="${p.id}" style="left:${pos(v)}%;background:${colorFuerte(s.t)}" title="${esc(p.nombre)} · ${euros(v)}"></button>`; }).join("")}
+      <span class="escala-marca" style="left:${pos(st.media)}%" title="Media ${euros(st.media)}"><i></i>media</span>
+    </div>
+    <div class="escala-leyenda"><span>${euros(st.min)} · barato</span><span>caro · ${euros(st.max)}</span></div>
+  </div>`;
+}
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-producto-escala]");
+  if (b) { e.stopPropagation(); abrirDetalle(b.dataset.productoEscala); }
+}, true);
+
 // ---------------- Navegar por el plano (arrastrar y acercar) ----------------
 const VB_BASE = { v: { x: 120, y: 160, w: 866, h: 2070 }, h: { x: 160, y: -986, w: 2070, h: 866 } };
 function svgPlanoActual() { return $("#vista-plano .lienzo.navegable svg"); }
@@ -648,6 +722,9 @@ function panelEspacio(espId) {
   for (const p of prods) new Set(p.cats.map((c) => raiz(c)?.id).filter(Boolean)).forEach((id) => cuentas.set(id, (cuentas.get(id) || 0) + 1));
   if (E.catPlano && !cuentas.has(E.catPlano)) E.catPlano = null;
   const visibles = E.catPlano ? prods.filter((p) => p.cats.some((c) => descendientes(E.catPlano).has(c))) : prods;
+  // Con una categoría elegida: estadísticas y escala de color de sus precios
+  const stPlano = E.catPlano ? estadisticas(visibles) : null;
+  E.escalaActual = stPlano?.escala ?? null;
   // Primero los elegidos
   visibles.sort((x, y) => elegido(y) - elegido(x));
   const chips = cuentas.size > 1 || E.catPlano
@@ -664,6 +741,7 @@ function panelEspacio(espId) {
       <button class="btn icono" data-cerrar-esp aria-label="Cerrar">✕</button>
     </div>
     ${chips}
+    ${panelEstadisticas(stPlano, E.catPlano ? catPorId(E.catPlano)?.nombre ?? "" : "")}
     ${visibles.length && !visibles.some(elegido) ? `<p class="pequeno pista-elegir">Marca con ✓ los que vais a comprar para que sumen en el total.</p>` : ""}
     ${visibles.length ? `<div class="conmutador-vista" role="group" aria-label="Ver como">
       <button type="button" class="${E.vistaLateral === "cuadricula" ? "activa" : ""}" data-vista-lateral="cuadricula" title="Cuadrícula">▦ Cuadrícula</button>
@@ -692,6 +770,7 @@ function filaProducto(p) {
     </div>
     <div class="fp-precio">
       <b>${euros(o?.precio)}</b>
+      ${pastillaPrecio(p)}
       ${baja ? `<span class="fp-baja">↓ ${euros(baja)}</span>` : o?.precio_original ? `<s>${euros(o.precio_original)}</s>` : ""}
       ${o ? `<a href="${esc(o.url)}" target="_blank" rel="noopener" class="fp-ir" data-parar title="Ir a la oferta">↗</a>` : ""}
     </div>
@@ -872,6 +951,11 @@ function pintarRejilla() {
   const rl = $("#resumen-lista");
   if (rl) rl.innerHTML = textoTotal(lista);
   if (E.modoSel) setTimeout(pintarBarraSel, 0);
+  const catSel = f.cat !== "todas" && f.cat !== "sin" ? catPorId(f.cat) : null;
+  const st = catSel ? estadisticas(lista) : null;
+  E.escalaActual = st?.escala ?? null;
+  $("#estadisticas").innerHTML = panelEstadisticas(st, catSel?.nombre ?? "");
+  $("#estadisticas").hidden = !st;
   $("#rejilla").innerHTML = lista.map(tarjeta).join("");
   const vacio = $("#vacio");
   if (!lista.length) {
@@ -997,7 +1081,8 @@ function tarjeta(p) {
   const dto = o?.precio_original && o.precio ? Math.round((1 - o.precio / o.precio_original) * 100) : 0;
   const nTiendas = new Set(p.ofertas.map((x) => x.tienda)).size;
   const sel = E.modoSel && E.sel.has(p.id);
-  return `<article class="tarjeta ${p.estado !== "pendiente" ? "apagada" : ""} ${E.modoSel ? "en-seleccion" : ""} ${sel ? "seleccionada" : ""} ${elegido(p) ? "elegida" : ""}" data-producto="${p.id}">
+  const esc_ = E.escalaActual?.get(p.id);
+  return `<article class="tarjeta ${p.estado !== "pendiente" ? "apagada" : ""} ${E.modoSel ? "en-seleccion" : ""} ${sel ? "seleccionada" : ""} ${elegido(p) ? "elegida" : ""} ${esc_ ? "con-escala" : ""}" data-producto="${p.id}" ${esc_ ? `style="--escala:${colorFuerte(esc_.t)}"` : ""}>
     <div class="foto">
       ${E.modoSel ? `<span class="casilla" aria-hidden="true">${sel ? "✓" : ""}</span>` : ""}
       ${img(p.imagen || o?.imagen, p.nombre)}
@@ -1012,6 +1097,7 @@ function tarjeta(p) {
       <div class="precio-linea">
         <span class="precio">${euros(o?.precio)}</span>
         ${o?.precio_original ? `<span class="precio-orig">${euros(o.precio_original)}</span>` : ""}
+        ${pastillaPrecio(p)}
       </div>
       ${p.pack_unidades ? `<div class="pack-linea"><span class="etq pack">Pack ×${p.pack_unidades}</span>${o?.precio ? ` <span class="pequeno">${euros(o.precio / p.pack_unidades)}/ud</span>` : ""}</div>` : ""}
       <div class="acciones">${botonElegir(p, "en-tarjeta")}${o ? `<a class="btn mini" href="${esc(o.url)}" target="_blank" rel="noopener" data-parar>Ir a la oferta ↗</a>` : ""}</div>
@@ -1776,6 +1862,7 @@ function abrirAjustes() {
           <li><b>Plano:</b> es la pantalla de inicio. Cada espacio de la casa (cocina, dormitorio…) es una zona del plano: tócala para ver lo que habéis guardado para ella. Con <b>✎ Editar plano</b> podéis mover sus límites, dibujar espacios nuevos, dividirlos, unirlos y cambiarles el nombre y el color. Los espacios que aún no estén dibujados se pueden colocar desde el editor.</li>
           <li><b>Espacios:</b> además de la categoría (qué es), cada producto puede tener uno o varios espacios (dónde irá: cocina, dormitorio…). En el lateral puedes combinarlos, por ejemplo «Sillas» + «Comedor». Si añades un producto con un espacio abierto, se le asigna automáticamente.</li>
           <li><b>Cambios en bloque:</b> pulsa <b>☑ Seleccionar</b>, arrastra el ratón con el botón pulsado para marcar varias de golpe (con Ctrl/⌘ se desmarcan), o mantén pulsada una tarjeta en el móvil, para cambiar categorías, espacios o estado de varios productos a la vez.</li>
+          <li><b>Precios de una categoría:</b> al ver una categoría (en la lista o filtrando dentro de un espacio del plano) aparecen el mínimo, la media, la mediana, la moda y el máximo, y una escala de color: cada producto lleva una marca de verde (barato) a rojo (caro) y su diferencia con la media. Los packs se comparan por precio por unidad.</li>
           <li><b>Mismo producto en otra tienda:</b> al añadirlo, la app te preguntará si es el mismo; así se agrupan las ofertas y se marca la más barata.</li>
         </ul>
       </details>
