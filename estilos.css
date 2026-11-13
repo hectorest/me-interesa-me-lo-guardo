@@ -309,3 +309,14 @@ body.seleccionando .principal { padding-bottom: 140px; }
 .campo-pack .unidades input { width: 70px; padding: 6px 8px; }
 
 .cat.sin-espacio .flecha { font-size: 12px; color: var(--tinta-3); }
+
+/* Categorías dentro de un espacio */
+.chips-vista { display: grid; gap: 8px; margin: -4px 0 16px; }
+.fila-chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: thin; }
+.fila-chips.sub { padding-left: 12px; border-left: 2px solid var(--linea); }
+.chip-vista { flex: none; border: 1px solid var(--linea); background: var(--papel); border-radius: 99px; padding: 6px 12px; font-size: 14px; cursor: pointer; color: var(--tinta); white-space: nowrap; }
+.chip-vista span { color: var(--tinta-3); font-size: 12px; margin-left: 2px; font-variant-numeric: tabular-nums; }
+.chip-vista:hover { border-color: #d6cbbb; background: #fff; }
+.chip-vista.activa { background: var(--tinta); border-color: var(--tinta); color: #fff; }
+.chip-vista.activa span { color: rgba(255,255,255,.7); }
+.fila-chips.sub .chip-vista { font-size: 13px; padding: 4px 10px; }

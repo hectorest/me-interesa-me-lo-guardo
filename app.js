@@ -356,6 +356,7 @@ function pintarRejilla() {
   lista = lista.sort(ord);
 
   pintarTitulo();
+  pintarChipsCategorias();
   if (E.modoSel) setTimeout(pintarBarraSel, 0);
   $("#rejilla").innerHTML = lista.map(tarjeta).join("");
   const vacio = $("#vacio");
@@ -365,6 +366,36 @@ function pintarRejilla() {
       ? `<h3>Nada por aquí</h3><p>No hay productos con estos filtros.</p>`
       : `<h3>Vuestra lista está vacía</h3><p>Pega el enlace de algo que os interese y empezad a guardar ofertas.</p><p><button class="btn primario" data-accion="anadir">+ Añadir la primera</button></p><p><a href="#" data-accion="ayuda">Ver formas rápidas de guardar</a></p>`;
   } else vacio.hidden = true;
+}
+
+// Dentro de un espacio: categorías que tiene ese espacio, como pestañas
+function pintarChipsCategorias() {
+  const cont = $("#chips-cats"), f = E.filtro;
+  if (!f.esp) { cont.hidden = true; cont.innerHTML = ""; return; }
+  const base = filtrados({ ignorarCat: true });
+  const cuenta = (id) => { const ds = descendientes(id); return base.filter((p) => p.cats.some((c) => ds.has(c))).length; };
+  const chip = (id, nombre, n, activa) => `<button class="chip-vista ${activa ? "activa" : ""}" data-chip-cat="${id}">${esc(nombre)} <span>${n}</span></button>`;
+  const sel = f.cat !== "todas" && f.cat !== "sin" ? catPorId(f.cat) : null;
+  // Rama activa: categoría principal de la seleccionada
+  let raizSel = sel; let g = 0;
+  while (raizSel?.padre_id && g++ < 20) raizSel = catPorId(raizSel.padre_id) ?? null;
+  const principales = hijosDe(null).map((c) => ({ c, n: cuenta(c.id) })).filter((x) => x.n);
+  const sin = base.filter((p) => !p.cats.length).length;
+  let html = `<div class="fila-chips">${chip("todas", "Todas", base.length, f.cat === "todas")}${principales.map(({ c, n }) => chip(c.id, c.nombre, n, raizSel?.id === c.id)).join("")}${sin ? chip("sin", "Sin categoría", sin, f.cat === "sin") : ""}</div>`;
+  // Subcategorías de la rama seleccionada (y de las que haya dentro)
+  let nivel = raizSel;
+  const cadena = [];
+  if (sel) { let x = sel; g = 0; while (x && g++ < 20) { cadena.unshift(x.id); x = catPorId(x.padre_id); } }
+  let i = 0;
+  while (nivel && i++ < 10) {
+    const hijos = hijosDe(nivel.id).map((c) => ({ c, n: cuenta(c.id) })).filter((x) => x.n);
+    if (!hijos.length) break;
+    const activoEnNivel = hijos.find(({ c }) => cadena.includes(c.id))?.c;
+    html += `<div class="fila-chips sub">${chip(nivel.id, "Todo " + nivel.nombre, cuenta(nivel.id), f.cat === nivel.id)}${hijos.map(({ c, n }) => chip(c.id, c.nombre, n, activoEnNivel?.id === c.id)).join("")}</div>`;
+    nivel = activoEnNivel;
+  }
+  cont.innerHTML = principales.length || sin ? html : `<p class="pequeno">Aún no hay productos en este espacio.</p>`;
+  cont.hidden = false;
 }
 
 // Título de la vista: si es una categoría, su nombre se edita ahí mismo (como el título de un documento)
@@ -1400,7 +1431,7 @@ let tBuscar;
 $("#buscar").oninput = (e) => { clearTimeout(tBuscar); tBuscar = setTimeout(() => { E.filtro.q = e.target.value; pintar(); }, 150); };
 $("#f-estado").onchange = (e) => { E.filtro.estado = e.target.value; pintar(); };
 $("#f-tienda").onchange = (e) => { E.filtro.tienda = e.target.value; pintar(); };
-$("#f-espacio").onchange = (e) => { E.filtro.esp = e.target.value; pintar(); };
+$("#f-espacio").onchange = (e) => { E.filtro.esp = e.target.value; if (E.filtro.esp) E.filtro.cat = "todas"; pintar(); };
 $("#f-orden").onchange = (e) => { E.filtro.orden = e.target.value; pintarRejilla(); };
 $("#f-bajadas").onchange = (e) => { E.filtro.bajadas = e.target.checked; pintar(); };
 
@@ -1418,11 +1449,19 @@ $("#titulo-vista").addEventListener("keydown", (e) => {
   if (e.key === "Escape") { e.target.value = nombreActual(e.target) ?? e.target.value; ajustarAnchoTitulo(); e.target.blur(); }
 });
 $("#titulo-vista").addEventListener("focusout", (e) => { if (e.target.id === "titulo-cat") guardarNombreCategoria(e.target); });
+$("#chips-cats").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-chip-cat]");
+  if (!b) return;
+  E.filtro.cat = b.dataset.chipCat;
+  if (catPorId(E.filtro.cat)) E.abiertas.add(E.filtro.cat);
+  pintar();
+});
 $("#lista-espacios").addEventListener("click", async (e) => {
   if (e.target.closest("[data-nuevo-esp]")) { const n = await crearEspacio(); if (n) { E.filtro.esp = n.id; pintar(); } return; }
   const b = e.target.closest("[data-esp]");
   if (!b) return;
   E.filtro.esp = E.filtro.esp === b.dataset.esp ? "" : b.dataset.esp; // pulsar de nuevo lo quita
+  if (E.filtro.esp) E.filtro.cat = "todas"; // al entrar en un espacio se ven todas sus categorías
   pintar();
   cerrarMenu();
   window.scrollTo({ top: 0, behavior: "smooth" });
