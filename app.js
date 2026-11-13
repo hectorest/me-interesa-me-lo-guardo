@@ -276,7 +276,7 @@ function pintarRejilla() {
     vacio.hidden = false;
     vacio.innerHTML = E.prods.length
       ? `<h3>Nada por aquí</h3><p>No hay productos con estos filtros.</p>`
-      : `<h3>Vuestra lista está vacía</h3><p>Pega el enlace de algo que os interese y empezad a guardar ofertas.</p><p><button class="btn primario" data-accion="anadir">+ Añadir la primera</button></p>`;
+      : `<h3>Vuestra lista está vacía</h3><p>Pega el enlace de algo que os interese y empezad a guardar ofertas.</p><p><button class="btn primario" data-accion="anadir">+ Añadir la primera</button></p><p><a href="#" data-accion="ayuda">Ver formas rápidas de guardar</a></p>`;
   } else vacio.hidden = true;
 }
 
@@ -843,28 +843,92 @@ async function cambioCats(e) {
 
 // ---------------- Ajustes ----------------
 function abrirAjustes() {
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const android = /Android/i.test(navigator.userAgent);
+  const movil = ios || android;
+  const abierto = (cond) => (cond ? "open" : "");
   $("#ajustes").innerHTML = `
-    <div>
-      <div class="seccion-titulo">Botón para guardar desde cualquier tienda</div>
-      <p>Algunas tiendas (Amazon, PcComponentes, MediaMarkt, Decathlon…) no dejan leer sus páginas desde un servidor. Con este botón los datos se toman <b>directamente de la página que estás viendo</b>, así que funciona siempre.</p>
-      <p><b>En el ordenador:</b> arrastra este botón a la barra de marcadores del navegador:</p>
-      <p><a class="marcador" href="${esc(enlaceMarcador(APP_URL))}" onclick="event.preventDefault();alert('Arrástralo a tu barra de marcadores; no hace falta pulsarlo aquí.')">⭐ Guardar en Me interesa</a></p>
-      <p class="pequeno">Después, en la página de un producto, pulsa el marcador y se abrirá la app con los datos rellenos. Si el producto ya estaba guardado, se actualiza su precio.</p>
-      <div class="seccion-titulo">Guardar desde el móvil con «Compartir»</div>
-      <p><b>Android:</b> abre esta web en Chrome → menú ⋮ → «Instalar aplicación» (o «Añadir a pantalla de inicio»). Desde entonces, al pulsar «Compartir» en cualquier tienda o app aparecerá <b>Me interesa</b>.</p>
-      <p><b>iPhone:</b> iOS no deja que las webs aparezcan en «Compartir», así que se usa un Atajo:</p>
-      <ol class="pequeno">
-        <li>Abre la app <b>Atajos</b> → <b>+</b> y ponle de nombre «Me interesa».</li>
-        <li>Toca la ⓘ (o el nombre) → activa <b>Mostrar en hoja de compartir</b>. En los tipos de entrada deja <b>URL</b>, <b>Texto</b> y <b>Páginas web de Safari</b>.</li>
-        <li>Añade la acción <b>Codificar URL</b> y elige como entrada <b>Entrada del atajo</b>.</li>
-        <li>Añade la acción <b>Texto</b> y escribe <code>${esc(APP_URL)}?url=</code> seguido de la variable <b>Texto codificado</b>.</li>
-        <li>Añade la acción <b>Abrir URL</b> (con el Texto anterior). Listo.</li>
-      </ol>
-      <p class="pequeno">Ahora, en cualquier tienda o app, pulsa Compartir → «Me interesa». Se abre la app con el producto leído para revisarlo y guardarlo. La primera vez quizá tengas que iniciar sesión en Safari.</p>
-      <p class="pequeno">Si la tienda bloquea la lectura, completa el precio a mano.</p>
-      <details><summary class="pequeno">¿Prefieres el marcador también en el móvil?</summary>
-        <p class="pequeno">Copia el código, crea un marcador cualquiera, edítalo y pega el código como dirección. Para usarlo en Chrome Android, escribe su nombre en la barra de direcciones y pulsa el resultado.</p>
-        <button class="btn mini" id="copiar-marcador">Copiar código del marcador</button>
+    <div class="ayuda">
+      <div class="seccion-titulo">Formas rápidas de guardar productos</div>
+      <p class="pequeno">Hay cuatro formas de añadir un producto. Todas acaban en la misma ventana, donde revisas los datos y la categoría antes de guardar.</p>
+
+      <div class="tabla-ayuda">
+        <div><b>📋 Pegar el enlace</b><span>Siempre disponible. La forma básica.</span></div>
+        <div><b>📲 Compartir desde el móvil</b><span>La más cómoda en el móvil: desde cualquier tienda o app.</span></div>
+        <div><b>⭐ Marcador «Guardar en Me interesa»</b><span>Para tiendas que no dejan leer sus datos (PcComponentes, MediaMarkt, Decathlon…). Funciona siempre.</span></div>
+        <div><b>✏️ A mano</b><span>Si nada de lo anterior lee el precio.</span></div>
+      </div>
+
+      <details class="paso">
+        <summary>📋 Pegar el enlace</summary>
+        <ol>
+          <li>Copia el enlace del producto en la tienda.</li>
+          <li>Pulsa <b>+ Añadir</b> y pégalo. Se lee automáticamente al pegarlo, sin pulsar «Leer».</li>
+          <li>Revisa nombre, precio y categoría, y pulsa <b>Guardar</b>.</li>
+        </ol>
+      </details>
+
+      <details class="paso" ${abierto(android)}>
+        <summary>📲 Compartir desde el móvil · Android</summary>
+        <p><b>Una sola vez:</b> instala la app.</p>
+        <ol>
+          <li>Abre esta web en <b>Chrome</b>.</li>
+          <li>Menú <b>⋮</b> → <b>Instalar aplicación</b> (o «Añadir a pantalla de inicio»).</li>
+        </ol>
+        <p><b>Para usarlo:</b> en cualquier tienda o app (Amazon, Wallapop, IKEA…), pulsa <b>Compartir</b> → <b>Me interesa</b>.</p>
+      </details>
+
+      <details class="paso" ${abierto(ios)}>
+        <summary>📲 Compartir desde el móvil · iPhone</summary>
+        <p>En iPhone las webs no pueden aparecer en «Compartir», así que se crea un <b>Atajo</b>. Se hace <b>una sola vez</b> y tarda 2 minutos:</p>
+        <ol>
+          <li>Abre la app <b>Atajos</b> (viene con el iPhone) y pulsa <b>+</b>.</li>
+          <li>Arriba, toca el nombre y llámalo <b>Me interesa</b>.</li>
+          <li>Toca la <b>ⓘ</b> de abajo y activa <b>Mostrar en hoja de compartir</b>. Vuelve atrás.</li>
+          <li>Busca y añade la acción <b>Codificar URL</b>. Si no aparece ya puesto, toca su campo y elige <b>Entrada del atajo</b>.</li>
+          <li>Añade la acción <b>Texto</b>. Pega dentro esta dirección: <button type="button" class="btn mini" id="copiar-atajo">Copiar dirección</button><br>
+              <code class="codigo">${esc(APP_URL)}?url=</code><br>
+              y justo detrás, sin espacios, toca la variable <b>Texto codificado</b> que aparece encima del teclado.</li>
+          <li>Añade la acción <b>Abrir URL</b>. Pulsa <b>OK</b> para guardar el atajo.</li>
+        </ol>
+        <p><b>Para usarlo:</b> en cualquier tienda o app, pulsa <b>Compartir</b> → <b>Me interesa</b> (si no aparece, desliza la fila de apps y pulsa «Más»).</p>
+        <p class="pequeno">Se abrirá en Safari: la primera vez tendrás que iniciar sesión allí también.</p>
+      </details>
+
+      <details class="paso" ${abierto(!movil)}>
+        <summary>⭐ Marcador · en el ordenador</summary>
+        <p>Toma los datos <b>directamente de la página que estás viendo</b>, así que funciona incluso en tiendas que bloquean la lectura. Si el producto ya estaba guardado, <b>actualiza su precio</b>.</p>
+        <ol>
+          <li>Muestra la barra de marcadores del navegador (Ctrl+Mayús+B en Chrome, ⌘+Mayús+B en Mac).</li>
+          <li>Arrastra este botón hasta esa barra:<br><a class="marcador" href="${esc(enlaceMarcador(APP_URL))}" onclick="event.preventDefault();alert('Arrástralo a la barra de marcadores; aquí no hace nada.')">⭐ Guardar en Me interesa</a></li>
+          <li>En la página de un producto, pulsa el marcador. Se abre la app con todo relleno.</li>
+        </ol>
+      </details>
+
+      <details class="paso">
+        <summary>⭐ Marcador · en el móvil</summary>
+        <p>Es más incómodo que «Compartir»; úsalo solo para las tiendas que no dejan leer el precio.</p>
+        <p><b>1. Copia el código:</b> <button type="button" class="btn mini" id="copiar-marcador">Copiar código del marcador</button></p>
+        <p><b>2. Crea el marcador:</b></p>
+        <ul>
+          <li><b>iPhone (Safari):</b> en cualquier página, <b>Compartir → Añadir marcador</b>, llámalo «Me interesa» y guarda. Después ve a <b>Marcadores</b> (icono del libro) → <b>Editar</b> → toca «Me interesa», borra la dirección, pega el código y guarda.</li>
+          <li><b>Android (Chrome):</b> en cualquier página, menú <b>⋮ → ☆</b>; luego <b>⋮ → Marcadores</b>, edita el nuevo, llámalo «Me interesa», borra la dirección, pega el código y guarda.</li>
+        </ul>
+        <p><b>3. Para usarlo,</b> en la página del producto (en Safari o Chrome, no dentro de la app de la tienda):</p>
+        <ul>
+          <li><b>iPhone:</b> abre <b>Marcadores</b> y toca «Me interesa».</li>
+          <li><b>Android:</b> toca la barra de direcciones, escribe <b>Me interesa</b> y pulsa la sugerencia con la estrella. (Desde la lista de marcadores no funciona.)</li>
+        </ul>
+      </details>
+
+      <details class="paso">
+        <summary>✏️ A mano y otros trucos</summary>
+        <ul>
+          <li>Si la tienda no deja leer los datos, escribe el nombre y el precio tú mismo en la ventana de añadir.</li>
+          <li>Para actualizar un precio: abre el producto → <b>Poner precio a mano</b>, o vuelve a guardarlo con el marcador.</li>
+          <li><b>Revisión automática:</b> cada día se revisan los precios de los productos pendientes. Las bajadas aparecen como <b>↓ X €</b>; usa el filtro <b>Solo bajadas</b> para verlas todas.</li>
+          <li><b>Mismo producto en otra tienda:</b> al añadirlo, la app te preguntará si es el mismo; así se agrupan las ofertas y se marca la más barata.</li>
+        </ul>
       </details>
     </div>
     <div>
@@ -899,10 +963,12 @@ function abrirAjustes() {
     } finally { btn.disabled = false; }
   };
   $("#salir").onclick = async () => { await sb.auth.signOut(); location.reload(); };
-  $("#copiar-marcador").onclick = async () => {
-    try { await navigator.clipboard.writeText(enlaceMarcador(APP_URL)); tostada("Código copiado"); }
-    catch { tostada("No se pudo copiar"); }
+  const copiar = async (texto, msg) => {
+    try { await navigator.clipboard.writeText(texto); tostada(msg); }
+    catch { prompt("Copia este texto:", texto); }
   };
+  $("#copiar-marcador").onclick = () => copiar(enlaceMarcador(APP_URL), "Código del marcador copiado");
+  $("#copiar-atajo").onclick = () => copiar(APP_URL + "?url=", "Dirección copiada");
   $("#dlg-ajustes").showModal();
 }
 
@@ -1060,6 +1126,7 @@ $("#arbol-cats").addEventListener("click", (e) => {
 document.addEventListener("click", (e) => {
   if (e.target.closest("[data-parar]")) return;
   if (e.target.closest("[data-accion=anadir]")) { abrirAnadir(); return; }
+  if (e.target.closest("[data-accion=ayuda]")) { e.preventDefault(); $$("dialog[open]").forEach((d) => d.close()); abrirAjustes(); return; }
   const t = e.target.closest(".tarjeta");
   if (t) abrirDetalle(t.dataset.producto);
 });

@@ -211,3 +211,18 @@ label { display: grid; gap: 6px; font-size: 13px; font-weight: 500; color: var(-
   .fila-gestion { grid-template-columns: 1fr auto; }
   .fila-gestion select { grid-column: 1 / -1; grid-row: 2; }
 }
+
+/* Ayuda */
+.ayuda { display: grid; gap: 10px; }
+.ayuda p, .ayuda ol, .ayuda ul { margin: 6px 0; }
+.ayuda ol, .ayuda ul { padding-left: 20px; display: grid; gap: 6px; }
+.tabla-ayuda { display: grid; gap: 6px; }
+.tabla-ayuda div { display: grid; gap: 2px; padding: 9px 12px; background: #fff; border: 1px solid var(--linea); border-radius: 10px; font-size: 14px; }
+.tabla-ayuda span { color: var(--tinta-2); font-size: 13px; }
+.paso { border: 1px solid var(--linea); border-radius: 12px; background: #fff; padding: 0 14px; }
+.paso summary { cursor: pointer; padding: 12px 0; font-weight: 600; list-style: none; display: flex; justify-content: space-between; gap: 8px; }
+.paso summary::-webkit-details-marker { display: none; }
+.paso summary::after { content: "▸"; color: var(--tinta-3); }
+.paso[open] summary::after { content: "▾"; }
+.paso[open] { padding-bottom: 12px; }
+.codigo { display: inline-block; margin: 4px 0; padding: 4px 8px; background: #f3ede3; border-radius: 6px; font-size: 12px; word-break: break-all; }
