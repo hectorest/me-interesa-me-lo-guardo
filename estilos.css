@@ -535,3 +535,14 @@ body.editando-plano .plano .zona.seleccionada polygon { fill-opacity: 1; stroke:
   #detalle .fila-cat .btn { flex: 1; }
   .elegir-detalle { flex-wrap: wrap; }
 }
+
+/* Productos del panel del plano en cuadrícula */
+.conmutador-vista { display: inline-flex; justify-self: start; background: #ece5da; border-radius: 9px; padding: 3px; gap: 2px; }
+.conmutador-vista button { border: 0; background: none; padding: 5px 10px; border-radius: 7px; font: inherit; font-size: 13px; cursor: pointer; color: var(--tinta-2); }
+.conmutador-vista button.activa { background: var(--papel); color: var(--tinta); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.rejilla-lateral { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+.rejilla-lateral .tarjeta .info { padding: 10px; gap: 4px; }
+.rejilla-lateral .tarjeta .nombre { font-size: 13px; }
+.rejilla-lateral .precio { font-size: 18px; }
+.rejilla-lateral .tarjeta .acciones .btn { padding: 5px 8px; font-size: 12px; }
+@media (max-width: 899px) { .rejilla-lateral { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); } }

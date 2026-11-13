@@ -33,6 +33,7 @@ const E = {
   esps: [],
   zonas: [], // zonas del plano (forma, nombre, color, espacio)
   editor: null, // editor del plano abierto
+  vistaLateral: leerLocal("vista-lateral", "cuadricula"), // productos del panel del plano: cuadrícula o lista
   vista: leerLocal("vista", "plano"),
   filtro: { cat: "todas", esp: "", estado: "pendiente", tienda: "", orden: "recientes", q: "", bajadas: false },
   abiertas: new Set(leerLocal("cats-abiertas", [])),
@@ -597,8 +598,12 @@ function panelEspacio(espId) {
     </div>
     ${chips}
     ${visibles.length && !visibles.some(elegido) ? `<p class="pequeno pista-elegir">Marca con ✓ los que vais a comprar para que sumen en el total.</p>` : ""}
-    <div class="lista-lateral">
-      ${visibles.map(filaProducto).join("") || `<div class="vacio-lateral"><p>Aún no hay nada guardado aquí.</p><button class="btn mini primario" data-accion="anadir">+ Añadir producto</button></div>`}
+    ${visibles.length ? `<div class="conmutador-vista" role="group" aria-label="Ver como">
+      <button type="button" class="${E.vistaLateral === "cuadricula" ? "activa" : ""}" data-vista-lateral="cuadricula" title="Cuadrícula">▦ Cuadrícula</button>
+      <button type="button" class="${E.vistaLateral === "lista" ? "activa" : ""}" data-vista-lateral="lista" title="Lista">☰ Lista</button>
+    </div>` : ""}
+    <div class="${E.vistaLateral === "cuadricula" && visibles.length ? "rejilla rejilla-lateral" : "lista-lateral"}">
+      ${(E.vistaLateral === "cuadricula" ? visibles.map(tarjeta) : visibles.map(filaProducto)).join("") || `<div class="vacio-lateral"><p>Aún no hay nada guardado aquí.</p><button class="btn mini primario" data-accion="anadir">+ Añadir producto</button></div>`}
     </div>
     <div class="lateral-pie">
       <button class="btn mini" data-abrir-lista="${esc(espId)}">Ver en la lista ↗</button>
@@ -1910,6 +1915,8 @@ $("#vista-plano").addEventListener("click", (e) => {
   if (e.target.closest("[data-cerrar-esp]")) { elegirEspacioPlano(null); return; }
   const lista = e.target.closest("[data-abrir-lista]");
   if (lista) { E.espPlano = null; irAEspacio(lista.dataset.abrirLista); return; }
+  const vl = e.target.closest("[data-vista-lateral]");
+  if (vl) { E.vistaLateral = vl.dataset.vistaLateral; guardarLocal("vista-lateral", E.vistaLateral); pintarPlano(); return; }
   const chip = e.target.closest("[data-cat-plano]");
   if (chip) { E.catPlano = chip.dataset.catPlano || null; pintarPlano(); return; }
   const prod = e.target.closest("[data-producto-lateral]");
