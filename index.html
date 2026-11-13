@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Me interesa, me lo guardo</title>
+  <meta name="theme-color" content="#f6f1e9">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icono.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icono-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+  <!-- Acceso -->
+  <section id="pantalla-acceso" class="acceso" hidden>
+    <div class="acceso-caja">
+      <h1 class="marca">Me interesa,<br><em>me lo guardo</em></h1>
+      <p class="sub">Vuestra lista compartida de ofertas.</p>
+      <form id="form-acceso">
+        <label>Correo<input type="email" name="email" required autocomplete="email"></label>
+        <label>Contraseña<input type="password" name="password" required minlength="6" autocomplete="current-password"></label>
+        <button class="btn primario" type="submit" id="btn-acceso">Entrar</button>
+        <p class="pequeno">¿Primera vez? <a href="#" id="alternar-registro">Crear cuenta</a></p>
+        <p id="msg-acceso" class="aviso" hidden></p>
+      </form>
+    </div>
+  </section>
+
+  <!-- App -->
+  <div id="app" hidden>
+    <header class="cabecera">
+      <button class="btn icono solo-movil" id="btn-menu" aria-label="Categorías">☰</button>
+      <h1 class="marca pequena">Me interesa, <em>me lo guardo</em></h1>
+      <div class="buscador">
+        <input type="search" id="buscar" placeholder="Buscar productos, tiendas, notas…" autocomplete="off">
+      </div>
+      <button class="btn primario" id="btn-anadir">+ Añadir</button>
+      <button class="btn icono" id="btn-ajustes" aria-label="Más opciones">⋯</button>
+    </header>
+
+    <div class="cuerpo">
+      <aside class="lateral" id="lateral">
+        <div class="lateral-titulo">
+          <span>Categorías</span>
+          <button class="btn enlace" id="btn-gestionar-cats">Editar</button>
+        </div>
+        <nav id="arbol-cats"></nav>
+      </aside>
+      <div class="velo solo-movil" id="velo" hidden></div>
+
+      <main class="principal">
+        <div class="barra-filtros">
+          <h2 id="titulo-vista">Todo</h2>
+          <div class="filtros">
+            <select id="f-estado" aria-label="Estado">
+              <option value="pendiente">Pendientes</option>
+              <option value="comprado">Comprados</option>
+              <option value="descartado">Descartados</option>
+              <option value="todos">Todos</option>
+            </select>
+            <select id="f-tienda" aria-label="Tienda"><option value="">Todas las tiendas</option></select>
+            <select id="f-orden" aria-label="Orden">
+              <option value="recientes">Más recientes</option>
+              <option value="precio-asc">Precio: menor a mayor</option>
+              <option value="precio-desc">Precio: mayor a menor</option>
+              <option value="bajada">Mayor bajada</option>
+              <option value="nombre">Nombre</option>
+            </select>
+            <label class="interruptor"><input type="checkbox" id="f-bajadas"> Solo bajadas</label>
+          </div>
+        </div>
+        <div id="rejilla" class="rejilla"></div>
+        <div id="vacio" class="vacio" hidden></div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Diálogo: añadir -->
+  <dialog id="dlg-anadir" class="dialogo">
+    <form method="dialog" class="dlg-cab">
+      <h3 id="anadir-titulo">Añadir oferta</h3>
+      <button class="btn icono" value="cerrar" aria-label="Cerrar">✕</button>
+    </form>
+    <div class="dlg-cuerpo">
+      <form id="form-url" class="fila-url">
+        <input type="url" id="in-url" placeholder="Pega aquí el enlace del producto" required>
+        <button class="btn primario" id="btn-leer">Leer</button>
+      </form>
+      <p class="pequeno" id="estado-lectura"></p>
+      <div id="anadir-form" hidden></div>
+    </div>
+  </dialog>
+
+  <!-- Diálogo: detalle -->
+  <dialog id="dlg-detalle" class="dialogo ancho">
+    <form method="dialog" class="dlg-cab">
+      <h3>Detalle</h3>
+      <button class="btn icono" value="cerrar" aria-label="Cerrar">✕</button>
+    </form>
+    <div class="dlg-cuerpo" id="detalle"></div>
+  </dialog>
+
+  <!-- Diálogo: categorías -->
+  <dialog id="dlg-cats" class="dialogo">
+    <form method="dialog" class="dlg-cab">
+      <h3>Categorías</h3>
+      <button class="btn icono" value="cerrar" aria-label="Cerrar">✕</button>
+    </form>
+    <div class="dlg-cuerpo" id="gestion-cats"></div>
+  </dialog>
+
+  <!-- Diálogo: ajustes -->
+  <dialog id="dlg-ajustes" class="dialogo">
+    <form method="dialog" class="dlg-cab">
+      <h3>Más opciones</h3>
+      <button class="btn icono" value="cerrar" aria-label="Cerrar">✕</button>
+    </form>
+    <div class="dlg-cuerpo" id="ajustes"></div>
+  </dialog>
+
+  <div id="tostada" class="tostada" hidden></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
