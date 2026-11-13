@@ -6,7 +6,22 @@ const SUPABASE_URL = "https://qwtogbdmzcstecxhigvq.supabase.co";
 const SUPABASE_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF3dG9nYmRtemNzdGVjeGhpZ3ZxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ1NDYzNzksImV4cCI6MjExMDEyMjM3OX0.E8r72UF-xoW-IvzQC1ETMPXi3S-RmIJ0Q11vBieOQSY";
 const APP_URL = location.origin + location.pathname;
-const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
+// Sesión: con «Mantener la sesión iniciada» se guarda en localStorage (sobrevive a cerrar
+// la app); sin ella, en sessionStorage (se cierra al cerrar la pestaña o la app).
+const mantenerSesion = () => { try { return localStorage.getItem("mantener-sesion") !== "no"; } catch { return true; } };
+const almacenSesion = {
+  getItem: (k) => { try { return localStorage.getItem(k) ?? sessionStorage.getItem(k); } catch { return null; } },
+  setItem: (k, v) => {
+    try {
+      const [usar, otro] = mantenerSesion() ? [localStorage, sessionStorage] : [sessionStorage, localStorage];
+      usar.setItem(k, v); otro.removeItem(k);
+    } catch { /* sin almacenamiento */ }
+  },
+  removeItem: (k) => { try { localStorage.removeItem(k); sessionStorage.removeItem(k); } catch { /* */ } },
+};
+const sb = createClient(SUPABASE_URL, SUPABASE_KEY, {
+  auth: { storage: almacenSesion, persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+});
 
 // ---------------- Estado ----------------
 const E = {
@@ -908,8 +923,10 @@ async function iniciar() {
   if (recuperando || (viaRecuperacion && session)) return pedirNuevaClave();
   if (!session) return mostrarAcceso();
   E.usuario = session.user;
-  const { data: miembro } = await sb.rpc("es_miembro");
-  if (!miembro) {
+  const { data: miembro, error: errMiembro } = await sb.rpc("es_miembro");
+  // Solo se cierra la sesión si la base de datos dice claramente que no es miembro
+  // (un fallo de red no debe echar a nadie)
+  if (!errMiembro && miembro === false) {
     await sb.auth.signOut();
     return mostrarAcceso("Esta cuenta no tiene acceso: la app está limitada a dos personas.");
   }
@@ -960,6 +977,7 @@ $("#form-acceso").onsubmit = async (e) => {
   e.preventDefault();
   const f = new FormData(e.target);
   const email = f.get("email"), password = f.get("password");
+  try { localStorage.setItem("mantener-sesion", f.get("mantener") ? "si" : "no"); } catch { /* */ }
   const btn = $("#btn-acceso");
   btn.disabled = true;
   try {
