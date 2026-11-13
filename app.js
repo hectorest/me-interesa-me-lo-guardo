@@ -835,7 +835,18 @@ function abrirAjustes() {
       <p><b>En el ordenador:</b> arrastra este botón a la barra de marcadores del navegador:</p>
       <p><a class="marcador" href="${esc(enlaceMarcador(APP_URL))}" onclick="event.preventDefault();alert('Arrástralo a tu barra de marcadores; no hace falta pulsarlo aquí.')">⭐ Guardar en Me interesa</a></p>
       <p class="pequeno">Después, en la página de un producto, pulsa el marcador y se abrirá la app con los datos rellenos. Si el producto ya estaba guardado, se actualiza su precio.</p>
-      <p><b>En el móvil:</b> usa el botón «Compartir» del navegador y elige esta app (primero instálala: menú del navegador → «Añadir a pantalla de inicio»). Si la tienda bloquea la lectura, completa el precio a mano.</p>
+      <div class="seccion-titulo">Guardar desde el móvil con «Compartir»</div>
+      <p><b>Android:</b> abre esta web en Chrome → menú ⋮ → «Instalar aplicación» (o «Añadir a pantalla de inicio»). Desde entonces, al pulsar «Compartir» en cualquier tienda o app aparecerá <b>Me interesa</b>.</p>
+      <p><b>iPhone:</b> iOS no deja que las webs aparezcan en «Compartir», así que se usa un Atajo:</p>
+      <ol class="pequeno">
+        <li>Abre la app <b>Atajos</b> → <b>+</b> y ponle de nombre «Me interesa».</li>
+        <li>Toca la ⓘ (o el nombre) → activa <b>Mostrar en hoja de compartir</b>. En los tipos de entrada deja <b>URL</b>, <b>Texto</b> y <b>Páginas web de Safari</b>.</li>
+        <li>Añade la acción <b>Codificar URL</b> y elige como entrada <b>Entrada del atajo</b>.</li>
+        <li>Añade la acción <b>Texto</b> y escribe <code>${esc(APP_URL)}?url=</code> seguido de la variable <b>Texto codificado</b>.</li>
+        <li>Añade la acción <b>Abrir URL</b> (con el Texto anterior). Listo.</li>
+      </ol>
+      <p class="pequeno">Ahora, en cualquier tienda o app, pulsa Compartir → «Me interesa». Se abre la app con el producto leído para revisarlo y guardarlo. La primera vez quizá tengas que iniciar sesión en Safari.</p>
+      <p class="pequeno">Si la tienda bloquea la lectura, completa el precio a mano.</p>
       <details><summary class="pequeno">¿Prefieres el marcador también en el móvil?</summary>
         <p class="pequeno">Copia el código, crea un marcador cualquiera, edítalo y pega el código como dirección. Para usarlo en Chrome Android, escribe su nombre en la barra de direcciones y pulsa el resultado.</p>
         <button class="btn mini" id="copiar-marcador">Copiar código del marcador</button>
@@ -860,8 +871,15 @@ function leerEntrada() {
   const h = location.hash.match(/^#importar=(.+)$/);
   if (h) { try { entrada = { datos: JSON.parse(decodeURIComponent(h[1])) }; } catch { /* ignorar */ } }
   const q = new URLSearchParams(location.search);
-  const compartida = q.get("url") || (q.get("text") || "").match(/https?:\/\/\S+/)?.[0];
-  if (compartida) entrada = { url: compartida, titulo: q.get("title") || "" };
+  // Lo que llega al compartir desde el móvil (Android o Atajo de iPhone) puede ser
+  // solo el enlace o un texto con el enlace dentro: «Mira esto en Amazon https://amzn.eu/…»
+  const bruto = [q.get("url"), q.get("text"), q.get("title")].filter(Boolean).join(" ");
+  const compartida = bruto.match(/https?:\/\/[^\s"'<>]+/)?.[0]?.replace(/[.,;:!?)\]]+$/, "");
+  if (compartida) {
+    const resto = bruto.replace(compartida, "").replace(/https?:\/\/\S+/g, "").replace(/\s+/g, " ").trim();
+    const titulo = q.get("title") && !/^https?:/.test(q.get("title")) ? q.get("title") : resto;
+    entrada = { url: compartida, titulo: titulo.length > 3 && titulo.length < 250 ? titulo : "" };
+  }
   if (h || compartida) history.replaceState(null, "", location.pathname);
   if (entrada) { try { sessionStorage.setItem("entrada", JSON.stringify(entrada)); } catch { /* */ } }
   else { try { entrada = JSON.parse(sessionStorage.getItem("entrada")); } catch { /* */ } }
