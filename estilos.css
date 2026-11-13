@@ -325,3 +325,66 @@ body.seleccionando .principal { padding-bottom: 140px; }
 .rectangulo-sel { position: absolute; z-index: 60; pointer-events: none; border: 1.5px solid var(--acento); background: rgba(210, 78, 36, .1); border-radius: 4px; }
 body.arrastrando, body.arrastrando * { user-select: none !important; -webkit-user-select: none !important; cursor: crosshair !important; }
 .tarjeta img { -webkit-user-drag: none; }
+
+/* ---------------- Plano ---------------- */
+.plano { width: 100%; height: auto; display: block; }
+.plano .muro { fill: #2f2a25; }
+.plano .zona polygon { fill: #fbf8f3; stroke: none; transition: fill .15s; }
+.plano .zona.asignada polygon { fill: #fffdf9; }
+.plano .zona.con-cosas polygon { fill: #fdf3ea; }
+.plano .zona.paso polygon { fill: #f4efe7; }
+.plano .zona { cursor: pointer; outline: none; }
+.plano .zona:hover polygon, .plano .zona:focus-visible polygon { fill: var(--acento-suave); }
+.plano .zona.activa polygon { fill: #f9d9cb; }
+.plano .hueco { fill: #fbf8f3; }
+.plano .arco { fill: rgba(47, 42, 37, .04); stroke: #b8ad9e; stroke-width: 1.5; stroke-dasharray: 4 4; pointer-events: none; }
+.plano .hoja { stroke: #8a7f70; stroke-width: 4; stroke-linecap: round; pointer-events: none; }
+.plano .ventana { stroke: #9cc3e0; stroke-width: 10; stroke-linecap: butt; }
+.plano .separacion { fill: none; stroke: #d9cfc1; stroke-width: 2; stroke-dasharray: 10 8; pointer-events: none; }
+.plano .fijo { pointer-events: none; }
+.plano .fijo rect, .plano .fijo circle, .plano .fijo ellipse, .plano .fijo path { fill: rgba(255, 255, 255, .6); stroke: #c9bcab; stroke-width: 2; }
+.plano .etiqueta { pointer-events: none; }
+.plano .t-nombre { font-family: var(--serif); font-weight: 700; font-size: 34px; fill: var(--tinta); text-anchor: middle; letter-spacing: -.01em; }
+.plano .t-nombre.peq { font-size: 20px; }
+.plano .zona.libre .t-nombre { fill: var(--tinta-3); font-weight: 500; font-style: italic; }
+.plano .zona.paso .t-nombre { font-size: 26px; fill: var(--tinta-3); font-weight: 500; }
+.plano .t-sub { font-family: var(--sans); font-size: 19px; fill: var(--tinta-3); text-anchor: middle; }
+.plano .burbuja rect { fill: var(--acento); }
+.plano .burbuja text { font-family: var(--sans); font-weight: 700; font-size: 19px; fill: #fff; text-anchor: middle; }
+
+.vista-plano { display: grid; grid-template-columns: minmax(0, 520px) minmax(260px, 1fr); gap: 28px; align-items: start; }
+.vista-plano .lienzo { background: var(--papel); border: 1px solid var(--linea); border-radius: 18px; padding: 14px; box-shadow: var(--sombra); }
+.vista-plano .panel { position: sticky; top: 84px; display: grid; gap: 14px; }
+.vista-plano .panel h2 { font-family: var(--serif); font-size: 28px; margin: 0; }
+.resumen-espacios { display: grid; gap: 6px; }
+.fila-espacio { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center; padding: 10px 12px; background: var(--papel); border: 1px solid var(--linea); border-radius: 12px; cursor: pointer; text-align: left; font: inherit; color: inherit; }
+.fila-espacio:hover, .fila-espacio.resaltada { border-color: var(--acento); background: #fff; }
+.fila-espacio b { font-weight: 600; }
+.fila-espacio small { grid-column: 1 / -1; color: var(--tinta-3); font-size: 12px; }
+.fila-espacio .n { font-variant-numeric: tabular-nums; color: var(--tinta-2); font-size: 13px; }
+.fila-espacio.fuera { border-style: dashed; }
+.pestanas-vista { display: inline-flex; background: #ece5da; border-radius: 10px; padding: 3px; gap: 2px; }
+.pestanas-vista button { border: 0; background: none; padding: 6px 12px; border-radius: 8px; cursor: pointer; font: inherit; font-size: 14px; color: var(--tinta-2); font-weight: 500; }
+.pestanas-vista button.activa { background: var(--papel); color: var(--tinta); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.aviso-editar { font-size: 13px; }
+body.editando-plano .plano .zona polygon { stroke: var(--acento); stroke-width: 3; stroke-dasharray: 8 6; }
+
+@media (max-width: 820px) {
+  .vista-plano { grid-template-columns: 1fr; gap: 16px; }
+  .vista-plano .panel { position: static; }
+  .vista-plano .lienzo { padding: 8px; border-radius: 14px; }
+  .pestanas-vista button { font-size: 16px !important; padding: 6px 10px; }
+}
+
+body.en-plano .barra-filtros, body.en-plano #chips-cats, body.en-plano #rejilla, body.en-plano #vacio { display: none !important; }
+body:not(.en-plano) #vista-plano { display: none; }
+.principal > .pestanas-vista { margin-bottom: 16px; }
+.ruta-padre a[data-volver-plano] { font-weight: 600; color: var(--acento-2); }
+
+/* Plano en horizontal (pantallas anchas): plano arriba a todo el ancho, resumen debajo */
+.vista-plano.horizontal { grid-template-columns: 1fr; gap: 20px; }
+.vista-plano.horizontal .lienzo { max-width: 1200px; }
+.vista-plano.horizontal .panel { position: static; grid-template-columns: minmax(220px, 300px) 1fr; align-items: start; gap: 20px; }
+.vista-plano.horizontal .resumen-espacios { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+.vista-plano.horizontal .aviso-editar { grid-column: 1; }
+.vista-plano.horizontal .resumen-espacios { grid-column: 2; grid-row: 1 / span 2; }

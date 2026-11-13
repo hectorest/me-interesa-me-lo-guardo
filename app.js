@@ -1,5 +1,6 @@
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 import { enlaceMarcador } from "./marcador.js";
+import { ZONAS, svgPlano } from "./plano.js";
 
 // ---------------- Configuración ----------------
 const SUPABASE_URL = "https://qwtogbdmzcstecxhigvq.supabase.co";
@@ -29,6 +30,8 @@ const E = {
   cats: [],
   prods: [],
   esps: [],
+  zonasPlano: [], // filas de plano_zonas
+  vista: leerLocal("vista", "plano"),
   filtro: { cat: "todas", esp: "", estado: "pendiente", tienda: "", orden: "recientes", q: "", bajadas: false },
   abiertas: new Set(leerLocal("cats-abiertas", [])),
   ultimaCarga: 0,
@@ -213,11 +216,13 @@ const bajadaProducto = (p) => Math.max(0, ...p.ofertas.map((o) => Math.max(bajad
 
 // ---------------- Carga de datos ----------------
 async function cargar() {
-  const [c, p, s] = await Promise.all([
+  const [c, p, s, z] = await Promise.all([
     sb.from("categorias").select("*"),
     sb.from("productos").select("*, ofertas(*), producto_categorias(categoria_id), producto_espacios(espacio_id)").order("creado_en", { ascending: false }),
     sb.from("espacios").select("*").order("orden").order("nombre"),
+    sb.from("plano_zonas").select("*"),
   ]);
+  E.zonasPlano = z.error ? [] : z.data;
   if (c.error || p.error || s.error) { tostada("Error al cargar: " + (c.error || p.error || s.error).message); return; }
   E.cats = c.data;
   E.esps = s.data;
@@ -260,6 +265,113 @@ function pintar() {
   pintarEspacios();
   pintarTiendas();
   pintarRejilla();
+  pintarPlano();
+}
+
+// ---------------- Vista de plano ----------------
+// Espacio asociado a cada estancia: solo el que elijáis vosotros (sin asignación automática)
+function espacioDeZona(z) {
+  const fila = E.zonasPlano.find((r) => r.zona === z.id);
+  return fila ? espPorId(fila.espacio_id) ?? null : null;
+}
+function cambiarVista(v) {
+  E.vista = v;
+  guardarLocal("vista", v);
+  document.body.classList.toggle("en-plano", v === "plano");
+  $$(".pestanas-vista button").forEach((b) => { b.classList.toggle("activa", b.dataset.vista === v); b.setAttribute("aria-selected", b.dataset.vista === v); });
+  if (v === "plano" && E.modoSel) salirSeleccion();
+  pintar();
+  window.scrollTo({ top: 0 });
+}
+function irAEspacio(id) {
+  E.filtro.esp = id;
+  E.filtro.cat = "todas";
+  cambiarVista("lista");
+}
+function pintarPlano() {
+  const cont = $("#vista-plano");
+  if (E.vista !== "plano") { cont.innerHTML = ""; return; }
+  const base = filtrados({ ignorarEsp: true, ignorarCat: true });
+  const cuenta = (espId) => base.filter((p) => p.esps.includes(espId)).length;
+  const sumaDe = (lista) => lista.reduce((s, p) => s + (mejorOferta(p)?.precio ?? 0), 0);
+  const editando = document.body.classList.contains("editando-plano");
+  const horizontal = matchMedia("(min-width: 900px)").matches;
+  cont.classList.toggle("horizontal", horizontal);
+  const svg = svgPlano((z) => {
+    const e = espacioDeZona(z);
+    return {
+      titulo: esc(e?.nombre ?? z.nombre),
+      subtitulo: e ? "" : "Toca para asignar",
+      asignada: !!e,
+      n: e ? cuenta(e.id) : 0,
+    };
+  }, { horizontal });
+  // Resumen por espacio (incluye los que no están en el plano)
+  const enPlano = new Map();
+  for (const z of ZONAS) { const e = espacioDeZona(z); if (e) enPlano.set(e.id, [...(enPlano.get(e.id) || []), z]); }
+  const filas = E.esps.map((e) => {
+    const prods = base.filter((p) => p.esps.includes(e.id));
+    const fuera = !enPlano.has(e.id);
+    return `<button class="fila-espacio ${fuera ? "fuera" : ""}" data-ir-esp="${e.id}" data-zonas="${(enPlano.get(e.id) || []).map((z) => z.id).join(" ")}">
+      <b>📍 ${esc(e.nombre)}</b><span class="n">${prods.length} ${prods.length === 1 ? "cosa" : "cosas"}</span>
+      <small>${fuera ? "No está en el plano" : (enPlano.get(e.id) || []).length > 1 ? `${enPlano.get(e.id).length} estancias del plano` : "En el plano"}${prods.length ? ` · ${euros(sumaDe(prods))}` : ""}</small>
+    </button>`;
+  }).join("");
+  const sinEsp = base.filter((p) => !p.esps.length);
+  const total = base.length;
+  cont.innerHTML = `
+    <div class="lienzo">${svg}</div>
+    <aside class="panel">
+      <div>
+        <h2>Vuestra casa</h2>
+        <p class="pequeno" style="margin:4px 0 0">${total} ${E.filtro.estado === "pendiente" ? "productos pendientes" : "productos"}${total ? ` · ${euros(sumaDe(base))} si compráis la opción más barata de cada uno` : ""}</p>
+      </div>
+      <p class="pequeno aviso-editar">${editando
+        ? `<b>Modo edición:</b> toca una estancia para elegir qué espacio es. <button class="btn mini primario" id="fin-editar-plano">Hecho</button>`
+        : `Toca una estancia para ver lo que habéis guardado para ella. <button class="btn mini" id="editar-plano">✎ Asignar estancias</button>`}</p>
+      <div class="resumen-espacios">${filas}
+        ${sinEsp.length ? `<button class="fila-espacio fuera" data-ir-esp="sin"><b>∅ Sin espacio</b><span class="n">${sinEsp.length} ${sinEsp.length === 1 ? "cosa" : "cosas"}</span><small>Productos a los que aún no habéis puesto espacio</small></button>` : ""}
+      </div>
+    </aside>`;
+}
+
+// Asignar una estancia del plano a un espacio
+function abrirZona(zid) {
+  const z = ZONAS.find((x) => x.id === zid);
+  const actual = espacioDeZona(z);
+  $("#zona-titulo").textContent = `Estancia: ${actual?.nombre ?? z.nombre}`;
+  $("#zona-cuerpo").innerHTML = `
+    <p class="pequeno">¿Qué espacio de la app es esta estancia?</p>
+    <div class="chips chips-esp">
+      ${E.esps.map((e) => `<button type="button" class="chip-esp ${actual?.id === e.id ? "on" : ""}" data-asignar="${e.id}">📍 ${esc(e.nombre)}</button>`).join("")}
+      <button type="button" class="chip-esp nuevo" data-asignar-nuevo>＋ Nuevo espacio…</button>
+    </div>
+    <div class="pie-dlg">
+      ${actual ? `<button type="button" class="btn" data-asignar="">Quitar asignación</button>` : ""}
+      ${actual ? `<button type="button" class="btn primario" data-ver-esp="${actual.id}">Ver sus productos</button>` : ""}
+    </div>`;
+  $("#zona-cuerpo").onclick = async (e) => {
+    const ver = e.target.closest("[data-ver-esp]");
+    if (ver) { $("#dlg-zona").close(); irAEspacio(ver.dataset.verEsp); return; }
+    let espId;
+    if (e.target.closest("[data-asignar-nuevo]")) {
+      const n = await crearEspacio();
+      if (!n) return;
+      espId = n.id;
+    } else {
+      const b = e.target.closest("[data-asignar]");
+      if (!b) return;
+      espId = b.dataset.asignar || null;
+    }
+    const { error } = await sb.from("plano_zonas").upsert({ zona: z.id, espacio_id: espId, actualizado_en: new Date().toISOString() });
+    if (error) return tostada("Error: " + error.message);
+    const fila = E.zonasPlano.find((r) => r.zona === z.id);
+    if (fila) fila.espacio_id = espId; else E.zonasPlano.push({ zona: z.id, espacio_id: espId });
+    $("#dlg-zona").close();
+    pintar();
+    tostada(espId ? `${z.nombre} → ${espPorId(espId)?.nombre}` : "Asignación quitada");
+  };
+  $("#dlg-zona").showModal();
 }
 
 function pintarArbol() {
@@ -410,7 +522,7 @@ function pintarTitulo() {
   if (!c) {
     if (es && f.cat === "todas") {
       rp.hidden = false;
-      rp.innerHTML = `Espacio`;
+      rp.innerHTML = `<a href="#" data-volver-plano>← Plano</a> · Espacio`;
       h2.innerHTML = editable("esp", es.id, es.nombre);
       ajustarAnchoTitulo();
       return;
@@ -1253,6 +1365,7 @@ function abrirAjustes() {
           <li>Si la tienda no deja leer los datos, escribe el nombre y el precio tú mismo en la ventana de añadir.</li>
           <li>Para actualizar un precio: abre el producto → <b>Poner precio a mano</b>, o vuelve a guardarlo con el marcador.</li>
           <li><b>Revisión automática:</b> cada día se revisan los precios de los productos pendientes. Las bajadas aparecen como <b>↓ X €</b>; usa el filtro <b>Solo bajadas</b> para verlas todas.</li>
+          <li><b>Plano:</b> es la pantalla de inicio. Toca una estancia para ver lo que habéis guardado para ella. Para decir qué espacio es cada estancia, pulsa <b>✎ Asignar estancias</b> y toca cada una.</li>
           <li><b>Espacios:</b> además de la categoría (qué es), cada producto puede tener uno o varios espacios (dónde irá: cocina, dormitorio…). En el lateral puedes combinarlos, por ejemplo «Sillas» + «Comedor». Si añades un producto con un espacio abierto, se le asigna automáticamente.</li>
           <li><b>Cambios en bloque:</b> pulsa <b>☑ Seleccionar</b>, arrastra el ratón con el botón pulsado para marcar varias de golpe (con Ctrl/⌘ se desmarcan), o mantén pulsada una tarjeta en el móvil, para cambiar categorías, espacios o estado de varios productos a la vez.</li>
           <li><b>Mismo producto en otra tienda:</b> al añadirlo, la app te preguntará si es el mismo; así se agrupan las ofertas y se marca la más barata.</li>
@@ -1352,6 +1465,8 @@ async function iniciar() {
   }
   $("#pantalla-acceso").hidden = true;
   $("#app").hidden = false;
+  document.body.classList.toggle("en-plano", E.vista === "plano");
+  $$(".pestanas-vista button").forEach((b) => b.classList.toggle("activa", b.dataset.vista === E.vista));
   await cargar();
   procesarEntrada(entrada);
 }
@@ -1428,7 +1543,7 @@ $("#gestion-cats").addEventListener("click", accionCats);
 $("#gestion-cats").addEventListener("change", cambioCats);
 
 let tBuscar;
-$("#buscar").oninput = (e) => { clearTimeout(tBuscar); tBuscar = setTimeout(() => { E.filtro.q = e.target.value; pintar(); }, 150); };
+$("#buscar").oninput = (e) => { clearTimeout(tBuscar); tBuscar = setTimeout(() => { E.filtro.q = e.target.value; if (E.filtro.q && E.vista === "plano") cambiarVista("lista"); else pintar(); }, 150); };
 $("#f-estado").onchange = (e) => { E.filtro.estado = e.target.value; pintar(); };
 $("#f-tienda").onchange = (e) => { E.filtro.tienda = e.target.value; pintar(); };
 $("#f-espacio").onchange = (e) => { E.filtro.esp = e.target.value; if (E.filtro.esp) E.filtro.cat = "todas"; pintar(); };
@@ -1449,6 +1564,35 @@ $("#titulo-vista").addEventListener("keydown", (e) => {
   if (e.key === "Escape") { e.target.value = nombreActual(e.target) ?? e.target.value; ajustarAnchoTitulo(); e.target.blur(); }
 });
 $("#titulo-vista").addEventListener("focusout", (e) => { if (e.target.id === "titulo-cat") guardarNombreCategoria(e.target); });
+$$(".pestanas-vista button").forEach((b) => (b.onclick = () => { if (b.dataset.vista === "lista") { E.filtro.esp = ""; E.filtro.cat = "todas"; } cambiarVista(b.dataset.vista); }));
+$("#vista-plano").addEventListener("click", (e) => {
+  if (e.target.closest("#editar-plano")) { document.body.classList.add("editando-plano"); pintarPlano(); return; }
+  if (e.target.closest("#fin-editar-plano")) { document.body.classList.remove("editando-plano"); pintarPlano(); return; }
+  const fila = e.target.closest("[data-ir-esp]");
+  if (fila) { irAEspacio(fila.dataset.irEsp); return; }
+  const g = e.target.closest(".zona");
+  if (!g) return;
+  const z = ZONAS.find((x) => x.id === g.dataset.zona);
+  const esp = espacioDeZona(z);
+  if (!esp || document.body.classList.contains("editando-plano")) abrirZona(z.id);
+  else irAEspacio(esp.id);
+});
+// Girar el plano al cambiar entre pantalla ancha y estrecha
+matchMedia("(min-width: 900px)").addEventListener("change", () => { if (E.vista === "plano") pintarPlano(); });
+$("#vista-plano").addEventListener("keydown", (e) => {
+  if ((e.key === "Enter" || e.key === " ") && e.target.closest(".zona")) { e.preventDefault(); e.target.closest(".zona").dispatchEvent(new MouseEvent("click", { bubbles: true })); }
+});
+// Al pasar por una fila del resumen se resaltan sus estancias en el plano, y al revés
+$("#vista-plano").addEventListener("mouseover", (e) => {
+  const fila = e.target.closest("[data-zonas]");
+  const g = e.target.closest(".zona");
+  $$("#vista-plano .zona.activa, #vista-plano .fila-espacio.resaltada").forEach((x) => x.classList.remove("activa", "resaltada"));
+  if (fila) fila.dataset.zonas.split(" ").filter(Boolean).forEach((id) => $(`#vista-plano .zona[data-zona="${id}"]`)?.classList.add("activa"));
+  if (g) {
+    const esp = espacioDeZona(ZONAS.find((x) => x.id === g.dataset.zona));
+    if (esp) $(`#vista-plano .fila-espacio[data-ir-esp="${esp.id}"]`)?.classList.add("resaltada");
+  }
+});
 $("#chips-cats").addEventListener("click", (e) => {
   const b = e.target.closest("[data-chip-cat]");
   if (!b) return;
@@ -1462,11 +1606,13 @@ $("#lista-espacios").addEventListener("click", async (e) => {
   if (!b) return;
   E.filtro.esp = E.filtro.esp === b.dataset.esp ? "" : b.dataset.esp; // pulsar de nuevo lo quita
   if (E.filtro.esp) E.filtro.cat = "todas"; // al entrar en un espacio se ven todas sus categorías
+  if (E.vista === "plano") { cerrarMenu(); return cambiarVista("lista"); }
   pintar();
   cerrarMenu();
   window.scrollTo({ top: 0, behavior: "smooth" });
 });
 $("#ruta-padre").addEventListener("click", (e) => {
+  if (e.target.closest("[data-volver-plano]")) { e.preventDefault(); E.filtro.esp = ""; E.filtro.cat = "todas"; cambiarVista("plano"); return; }
   if (e.target.closest("[data-quitar-esp]")) { e.preventDefault(); E.filtro.esp = ""; pintar(); return; }
   const a = e.target.closest("[data-ir-cat]");
   if (!a) return;
@@ -1488,6 +1634,7 @@ $("#arbol-cats").addEventListener("click", (e) => {
   const b = e.target.closest("[data-cat]");
   if (!b) return;
   E.filtro.cat = b.dataset.cat;
+  if (E.vista === "plano") { E.vista = "lista"; cambiarVista("lista"); }
   if (b.dataset.cat !== "todas" && b.dataset.cat !== "sin") E.abiertas.add(b.dataset.cat);
   pintar();
   cerrarMenu();

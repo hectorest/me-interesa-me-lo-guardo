@@ -64,6 +64,11 @@
       <div class="velo solo-movil" id="velo" hidden></div>
 
       <main class="principal">
+        <div class="pestanas-vista" role="tablist">
+          <button data-vista="plano" role="tab">🏠 Plano</button>
+          <button data-vista="lista" role="tab">☰ Lista</button>
+        </div>
+        <section id="vista-plano" class="vista-plano" aria-label="Plano de la casa"></section>
         <div class="barra-filtros">
           <div class="cabecera-vista">
             <div class="ruta-padre" id="ruta-padre" hidden></div>
@@ -192,6 +197,15 @@
         <button type="button" class="btn primario peligro-fuerte" id="borrar-ok">Eliminar</button>
       </div>
     </div>
+  </dialog>
+
+  <!-- Diálogo: asignar estancia del plano a un espacio -->
+  <dialog id="dlg-zona" class="dialogo">
+    <form method="dialog" class="dlg-cab">
+      <h3 id="zona-titulo">Estancia</h3>
+      <button class="btn icono" value="cerrar" aria-label="Cerrar">✕</button>
+    </form>
+    <div class="dlg-cuerpo" id="zona-cuerpo"></div>
   </dialog>
 
   <div id="tostada" class="tostada" hidden></div>
