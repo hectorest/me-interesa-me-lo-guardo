@@ -315,7 +315,10 @@ function pintar() {
 // ---------------- Vista de plano ----------------
 const espacioDeZona = (z) => (z?.espacio_id ? espPorId(z.espacio_id) ?? null : null);
 const zonaPorId = (id) => E.zonas.find((z) => z.id === id);
-const esHorizontal = () => matchMedia("(min-width: 900px)").matches;
+const pantallaAncha = () => matchMedia("(min-width: 900px)").matches;
+// En el editor el plano ocupa todo el ancho (horizontal en pantallas anchas); en la vista normal
+// se elige la orientación con la que el plano se ve más grande junto al panel lateral.
+const esHorizontal = () => (E.editor || E.planoHorizontal == null ? pantallaAncha() : E.planoHorizontal);
 
 function cambiarVista(v) {
   if (E.editor && v !== "plano") return tostada("Guarda o cancela los cambios del plano primero");
@@ -349,34 +352,102 @@ function pintarPlano() {
   const cont = $("#vista-plano");
   if (E.editor) return; // el editor se encarga de su propio pintado
   if (E.vista !== "plano") { cont.innerHTML = ""; return; }
+  if (E.espPlano && E.espPlano !== "sin" && !espPorId(E.espPlano)) E.espPlano = null;
+  // Orientación: la que deja el plano más grande en el hueco disponible (al lado del panel en pantalla ancha)
+  if (pantallaAncha()) {
+    const ancho = cont.clientWidth - 400, alto = innerHeight - 150;
+    E.planoHorizontal = Math.min(ancho / 2070, alto / 866) > Math.min(ancho / 866, alto / 2070);
+  } else E.planoHorizontal = false;
+  cont.classList.toggle("horizontal", false);
+  cont.classList.add("con-lateral");
+  cont.classList.toggle("plano-h", E.planoHorizontal);
+  cont.classList.toggle("con-espacio", !!E.espPlano);
+  const zonasPintar = E.zonas;
+  const svg = svgPlano({
+    zonas: zonasPintar,
+    info: (z) => ({ ...infoZona(z), activa: !!E.espPlano && z.espacio_id === E.espPlano }),
+    horizontal: E.planoHorizontal,
+  });
+  cont.innerHTML = `<div class="lienzo">${svg}</div><aside class="panel lateral-plano">${E.espPlano ? panelEspacio(E.espPlano) : panelResumen()}</aside>`;
+}
+
+// Panel lateral sin espacio elegido: resumen de la casa
+function panelResumen() {
   const base = filtrados({ ignorarEsp: true, ignorarCat: true });
   const sumaDe = (lista) => lista.reduce((s, p) => s + (mejorOferta(p)?.precio ?? 0), 0);
-  cont.classList.toggle("horizontal", esHorizontal());
-  // Resumen por espacio (incluye los que no están en el plano)
-  const enPlano = new Map();
-  for (const z of E.zonas) { if (z.espacio_id && espPorId(z.espacio_id)) enPlano.set(z.espacio_id, [...(enPlano.get(z.espacio_id) || []), z]); }
+  const enPlano = new Set(E.zonas.map((z) => z.espacio_id));
   const filas = E.esps.map((e) => {
     const prods = base.filter((p) => p.esps.includes(e.id));
-    const zs = enPlano.get(e.id) || [];
-    return `<button class="fila-espacio ${zs.length ? "" : "fuera"}" data-ir-esp="${e.id}" data-zonas="${zs.map((z) => esc(z.id)).join(" ")}">
+    const zs = E.zonas.filter((z) => z.espacio_id === e.id);
+    return `<button class="fila-espacio ${enPlano.has(e.id) ? "" : "fuera"}" data-ver-esp="${e.id}" data-zonas="${zs.map((z) => esc(z.id)).join(" ")}">
       <b>📍 ${esc(e.nombre)}</b><span class="n">${prods.length} ${prods.length === 1 ? "cosa" : "cosas"}</span>
-      <small>${zs.length ? "En el plano" : "Sin dibujar en el plano"}${prods.length ? ` · ${euros(sumaDe(prods))}` : ""}</small>
+      <small>${enPlano.has(e.id) ? "" : "Sin dibujar en el plano · "}${prods.length ? euros(sumaDe(prods)) : "Vacío"}</small>
     </button>`;
   }).join("");
   const sinEsp = base.filter((p) => !p.esps.length);
-  const total = base.length;
-  cont.innerHTML = `
-    <div class="lienzo">${svgDe(E.zonas)}</div>
-    <aside class="panel">
+  return `
+    <div class="lateral-cab">
+      <div><h2>Vuestra casa</h2>
+      <p class="pequeno" style="margin:4px 0 0">${base.length} ${E.filtro.estado === "pendiente" ? "productos pendientes" : "productos"}${base.length ? ` · ${euros(sumaDe(base))}` : ""}</p></div>
+    </div>
+    <p class="pequeno aviso-editar">Toca un espacio del plano para ver aquí sus productos. <button class="btn mini" id="editar-plano">✎ Editar plano</button></p>
+    <div class="resumen-espacios">${filas}
+      ${sinEsp.length ? `<button class="fila-espacio fuera" data-ver-esp="sin"><b>∅ Sin espacio</b><span class="n">${sinEsp.length} ${sinEsp.length === 1 ? "cosa" : "cosas"}</span><small>Productos sin espacio asignado</small></button>` : ""}
+    </div>`;
+}
+
+// Panel lateral con los productos del espacio elegido en el plano
+function panelEspacio(espId) {
+  const e = espId === "sin" ? null : espPorId(espId);
+  const base = filtrados({ ignorarEsp: true, ignorarCat: true });
+  let prods = base.filter((p) => (e ? p.esps.includes(e.id) : !p.esps.length));
+  // Categorías presentes en este espacio (principales), como filtro rápido
+  const raiz = (id) => { let c = catPorId(id), g = 0; while (c?.padre_id && g++ < 20) c = catPorId(c.padre_id); return c; };
+  const cuentas = new Map();
+  for (const p of prods) new Set(p.cats.map((c) => raiz(c)?.id).filter(Boolean)).forEach((id) => cuentas.set(id, (cuentas.get(id) || 0) + 1));
+  if (E.catPlano && !cuentas.has(E.catPlano)) E.catPlano = null;
+  const visibles = E.catPlano ? prods.filter((p) => p.cats.some((c) => descendientes(E.catPlano).has(c))) : prods;
+  const suma = visibles.reduce((s, p) => s + (mejorOferta(p)?.precio ?? 0), 0);
+  const chips = cuentas.size > 1 || E.catPlano
+    ? `<div class="fila-chips">${[`<button class="chip-vista ${E.catPlano ? "" : "activa"}" data-cat-plano="">Todas <span>${prods.length}</span></button>`,
+        ...[...cuentas].sort((x, y) => y[1] - x[1]).map(([id, n]) => `<button class="chip-vista ${E.catPlano === id ? "activa" : ""}" data-cat-plano="${id}">${esc(catPorId(id).nombre)} <span>${n}</span></button>`)].join("")}</div>`
+    : "";
+  return `
+    <div class="lateral-cab">
       <div>
-        <h2>Vuestra casa</h2>
-        <p class="pequeno" style="margin:4px 0 0">${total} ${E.filtro.estado === "pendiente" ? "productos pendientes" : "productos"}${total ? ` · ${euros(sumaDe(base))} si compráis la opción más barata de cada uno` : ""}</p>
+        <div class="pequeno">📍 Espacio</div>
+        <h2>${esc(e ? e.nombre : "Sin espacio")}</h2>
+        <p class="pequeno" style="margin:2px 0 0">${visibles.length} ${visibles.length === 1 ? "producto" : "productos"}${visibles.length ? ` · ${euros(suma)}` : ""}</p>
       </div>
-      <p class="pequeno aviso-editar">Toca un espacio del plano para ver lo que habéis guardado para él. <button class="btn mini" id="editar-plano">✎ Editar plano</button></p>
-      <div class="resumen-espacios">${filas}
-        ${sinEsp.length ? `<button class="fila-espacio fuera" data-ir-esp="sin"><b>∅ Sin espacio</b><span class="n">${sinEsp.length} ${sinEsp.length === 1 ? "cosa" : "cosas"}</span><small>Productos a los que aún no habéis puesto espacio</small></button>` : ""}
-      </div>
-    </aside>`;
+      <button class="btn icono" data-cerrar-esp aria-label="Cerrar">✕</button>
+    </div>
+    ${chips}
+    <div class="lista-lateral">
+      ${visibles.map(filaProducto).join("") || `<div class="vacio-lateral"><p>Aún no hay nada guardado aquí.</p><button class="btn mini primario" data-accion="anadir">+ Añadir producto</button></div>`}
+    </div>
+    <div class="lateral-pie">
+      <button class="btn mini" data-abrir-lista="${esc(espId)}">Ver en la lista ↗</button>
+      ${e ? `<button class="btn mini" data-accion="anadir">+ Añadir aquí</button>` : ""}
+    </div>`;
+}
+
+// Fila compacta de producto para el panel lateral
+function filaProducto(p) {
+  const o = mejorOferta(p);
+  const baja = Math.max(0, ...p.ofertas.map(bajadaReciente));
+  const nT = new Set(p.ofertas.map((x) => x.tienda)).size;
+  return `<article class="fila-producto ${p.estado !== "pendiente" ? "apagada" : ""}" data-producto-lateral="${p.id}">
+    <div class="mini-foto">${img(p.imagen || o?.imagen, p.nombre)}</div>
+    <div class="fp-info">
+      <div class="fp-nombre">${esc(p.nombre)}</div>
+      <div class="fp-meta">${esc(o?.tienda ?? "")}${nT > 1 ? ` · ${nT} tiendas` : ""}${p.pack_unidades ? ` · <span class="etq pack">Pack ×${p.pack_unidades}</span>` : ""}${p.estado !== "pendiente" ? ` · ${p.estado}` : ""}</div>
+    </div>
+    <div class="fp-precio">
+      <b>${euros(o?.precio)}</b>
+      ${baja ? `<span class="fp-baja">↓ ${euros(baja)}</span>` : o?.precio_original ? `<s>${euros(o.precio_original)}</s>` : ""}
+      ${o ? `<a href="${esc(o.url)}" target="_blank" rel="noopener" class="fp-ir" data-parar title="Ir a la oferta">↗</a>` : ""}
+    </div>
+  </article>`;
 }
 
 // ---------------- Editor del plano ----------------
@@ -384,6 +455,7 @@ function abrirEditorPlano(selInicial = null, colocarEsp = null) {
   if (E.vista !== "plano") cambiarVista("plano");
   const cont = $("#vista-plano");
   cont.classList.toggle("horizontal", esHorizontal());
+  cont.classList.remove("con-lateral", "plano-h", "con-espacio");
   cont.innerHTML = `<div class="lienzo"></div><aside class="panel editor"></aside>`;
   document.body.classList.add("editando-plano");
   E.editor = new EditorPlano({
@@ -783,7 +855,8 @@ async function resolverCats(seleccion) {
 let B = null; // borrador actual
 
 function abrirAnadir({ url = "", datos = null, destino = null, titulo = "" } = {}) {
-  B = { destino, sel: [], sugeridas: [], esps: new Set(E.filtro.esp && E.filtro.esp !== "sin" ? [E.filtro.esp] : []), decision: destino ? "existente:" + destino : "nuevo" };
+  const espActual = E.vista === "plano" ? E.espPlano : E.filtro.esp;
+  B = { destino, sel: [], sugeridas: [], esps: new Set(espActual && espActual !== "sin" ? [espActual] : []), decision: destino ? "existente:" + destino : "nuevo" };
   $("#anadir-titulo").textContent = destino ? "Añadir otra tienda" : "Añadir oferta";
   $("#in-url").value = url;
   $("#estado-lectura").textContent = "";
@@ -1648,14 +1721,39 @@ $("#titulo-vista").addEventListener("focusout", (e) => { if (e.target.id === "ti
 $$(".pestanas-vista button").forEach((b) => (b.onclick = () => { if (b.dataset.vista === "lista") { E.filtro.esp = ""; E.filtro.cat = "todas"; } cambiarVista(b.dataset.vista); }));
 $("#vista-plano").addEventListener("click", (e) => {
   if (E.editor) return;
+  if (e.target.closest("[data-parar]")) return;
   if (e.target.closest("#editar-plano")) { abrirEditorPlano(); return; }
-  const fila = e.target.closest("[data-ir-esp]");
-  if (fila) { irAEspacio(fila.dataset.irEsp); return; }
+  const ver = e.target.closest("[data-ver-esp]");
+  if (ver) { elegirEspacioPlano(ver.dataset.verEsp); return; }
+  if (e.target.closest("[data-cerrar-esp]")) { elegirEspacioPlano(null); return; }
+  const lista = e.target.closest("[data-abrir-lista]");
+  if (lista) { E.espPlano = null; irAEspacio(lista.dataset.abrirLista); return; }
+  const chip = e.target.closest("[data-cat-plano]");
+  if (chip) { E.catPlano = chip.dataset.catPlano || null; pintarPlano(); return; }
+  const prod = e.target.closest("[data-producto-lateral]");
+  if (prod) { abrirDetalle(prod.dataset.productoLateral); return; }
   const g = e.target.closest(".zona");
-  if (!g) return;
+  if (!g) { if (e.target.closest(".lienzo") && E.espPlano) elegirEspacioPlano(null); return; }
   const esp = espacioDeZona(zonaPorId(g.dataset.zona));
-  if (esp) irAEspacio(esp.id);
+  if (esp) elegirEspacioPlano(E.espPlano === esp.id ? null : esp.id);
 });
+function elegirEspacioPlano(id) {
+  E.espPlano = id;
+  E.catPlano = null;
+  pintarPlano();
+  // En el móvil el panel sale abajo: desplazamos el plano para que el espacio elegido quede visible encima
+  if (id && !pantallaAncha()) setTimeout(() => {
+    const zona = $("#vista-plano .zona.activa");
+    const hoja = $(".lateral-plano");
+    if (!zona || !hoja) return;
+    const r = zona.getBoundingClientRect();
+    const libreArriba = 130, libreAbajo = innerHeight - hoja.getBoundingClientRect().height;
+    const objetivo = libreArriba + (libreAbajo - libreArriba) / 2;
+    window.scrollBy({ top: r.top + r.height / 2 - objetivo, behavior: "smooth" });
+  }, 40);
+}
+let tRedimensionar;
+window.addEventListener("resize", () => { clearTimeout(tRedimensionar); tRedimensionar = setTimeout(() => { if (E.vista === "plano" && !E.editor) pintarPlano(); }, 150); });
 // Girar el plano al cambiar entre pantalla ancha y estrecha
 matchMedia("(min-width: 900px)").addEventListener("change", () => {
   if (E.editor) { $("#vista-plano").classList.toggle("horizontal", esHorizontal()); E.editor.pintar(); }
@@ -1673,7 +1771,7 @@ $("#vista-plano").addEventListener("mouseover", (e) => {
   if (fila) fila.dataset.zonas.split(" ").filter(Boolean).forEach((id) => $(`#vista-plano .zona[data-zona="${id}"]`)?.classList.add("activa"));
   if (g) {
     const esp = espacioDeZona(zonaPorId(g.dataset.zona));
-    if (esp) $(`#vista-plano .fila-espacio[data-ir-esp="${esp.id}"]`)?.classList.add("resaltada");
+    if (esp) $(`#vista-plano .fila-espacio[data-ver-esp="${esp.id}"]`)?.classList.add("resaltada");
   }
 });
 $("#chips-cats").addEventListener("click", (e) => {
