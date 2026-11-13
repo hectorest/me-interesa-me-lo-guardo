@@ -380,6 +380,41 @@ function pintarPlano() {
   aplicarVista();
 }
 
+// ---------------- Productos elegidos (los que se van a comprar) ----------------
+// Solo los elegidos suman en los totales; el resto son opciones que estáis valorando.
+const elegido = (p) => !!p.en_presupuesto;
+const precioDe = (p) => mejorOferta(p)?.precio ?? 0;
+const totalElegidos = (lista) => lista.filter(elegido).reduce((s, p) => s + precioDe(p), 0);
+function textoTotal(lista) {
+  const n = lista.filter(elegido).length;
+  if (!lista.length) return "";
+  return n ? `${n} de ${lista.length} elegidos · <b>${euros(totalElegidos(lista))}</b>` : `${lista.length} ${lista.length === 1 ? "opción" : "opciones"} · ninguno elegido`;
+}
+async function cambiarElegidos(ids, valor) {
+  const prods = ids.map((id) => E.prods.find((p) => p.id === id)).filter(Boolean);
+  const antes = prods.map((p) => p.en_presupuesto);
+  prods.forEach((p) => (p.en_presupuesto = valor));
+  pintar();
+  const { error } = await sb.from("productos").update({ en_presupuesto: valor }).in("id", ids);
+  if (error) {
+    prods.forEach((p, i) => (p.en_presupuesto = antes[i]));
+    pintar();
+    const cb = $("#detalle [data-elegir-detalle]");
+    if (cb && D && ids.includes(D.id)) cb.checked = !!antes[ids.indexOf(D.id)];
+    tostada(/en_presupuesto/.test(error.message) ? "Falta actualizar la base de datos para poder elegir productos (avisa a Claude)" : "Error: " + error.message, 6000);
+    return false;
+  }
+  return true;
+}
+const botonElegir = (p, clase = "") => `<button type="button" class="check-elegir ${clase} ${elegido(p) ? "on" : ""}" data-elegir-prod="${p.id}" data-parar aria-pressed="${elegido(p)}" title="${elegido(p) ? "Elegido: cuenta en el total. Pulsa para quitarlo" : "Elegir para comprar (sumará en el total)"}">✓</button>`;
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-elegir-prod]");
+  if (!b) return;
+  e.preventDefault(); e.stopPropagation();
+  const p = E.prods.find((x) => x.id === b.dataset.elegirProd);
+  if (p) cambiarElegidos([p.id], !elegido(p));
+}, true);
+
 // ---------------- Navegar por el plano (arrastrar y acercar) ----------------
 const VB_BASE = { v: { x: 120, y: 160, w: 866, h: 2070 }, h: { x: 160, y: -986, w: 2070, h: 866 } };
 function svgPlanoActual() { return $("#vista-plano .lienzo.navegable svg"); }
@@ -512,23 +547,23 @@ function encuadrarEspacio(espId, areaVisible) {
 // Panel lateral sin espacio elegido: resumen de la casa
 function panelResumen() {
   const base = filtrados({ ignorarEsp: true, ignorarCat: true });
-  const sumaDe = (lista) => lista.reduce((s, p) => s + (mejorOferta(p)?.precio ?? 0), 0);
   const enPlano = new Set(E.zonas.map((z) => z.espacio_id));
   const filas = E.esps.map((e) => {
     const prods = base.filter((p) => p.esps.includes(e.id));
     const zs = E.zonas.filter((z) => z.espacio_id === e.id);
     return `<button class="fila-espacio ${enPlano.has(e.id) ? "" : "fuera"}" data-ver-esp="${e.id}" data-zonas="${zs.map((z) => esc(z.id)).join(" ")}">
-      <b>📍 ${esc(e.nombre)}</b><span class="n">${prods.length} ${prods.length === 1 ? "cosa" : "cosas"}</span>
-      <small>${enPlano.has(e.id) ? "" : "Sin dibujar en el plano · "}${prods.length ? euros(sumaDe(prods)) : "Vacío"}</small>
+      <b>📍 ${esc(e.nombre)}</b><span class="n">${prods.filter(elegido).length ? euros(totalElegidos(prods)) : ""}</span>
+      <small>${enPlano.has(e.id) ? "" : "Sin dibujar en el plano · "}${prods.length ? `${prods.length} ${prods.length === 1 ? "opción" : "opciones"}${prods.filter(elegido).length ? ` · ${prods.filter(elegido).length} elegidos` : ""}` : "Vacío"}</small>
     </button>`;
   }).join("");
   const sinEsp = base.filter((p) => !p.esps.length);
   return `
     <div class="lateral-cab">
       <div><h2>Vuestra casa</h2>
-      <p class="pequeno" style="margin:4px 0 0">${base.length} ${E.filtro.estado === "pendiente" ? "productos pendientes" : "productos"}${base.length ? ` · ${euros(sumaDe(base))}` : ""}</p></div>
+      <p class="pequeno" style="margin:4px 0 0">${base.length} ${E.filtro.estado === "pendiente" ? "productos pendientes" : "productos"}</p></div>
+      <div class="total-caja"><small>Total elegido</small><b>${euros(totalElegidos(base))}</b><small>${base.filter(elegido).length} productos</small></div>
     </div>
-    <p class="pequeno aviso-editar">Toca un espacio del plano para ver aquí sus productos. <button class="btn mini" id="editar-plano">✎ Editar plano</button></p>
+    <p class="pequeno aviso-editar">Toca un espacio del plano para ver aquí sus productos. Marca con <span class="check-elegir on mini-demo">✓</span> lo que vais a comprar: solo eso suma en los totales. <button class="btn mini" id="editar-plano">✎ Editar plano</button></p>
     <div class="resumen-espacios">${filas}
       ${sinEsp.length ? `<button class="fila-espacio fuera" data-ver-esp="sin"><b>∅ Sin espacio</b><span class="n">${sinEsp.length} ${sinEsp.length === 1 ? "cosa" : "cosas"}</span><small>Productos sin espacio asignado</small></button>` : ""}
     </div>`;
@@ -545,7 +580,8 @@ function panelEspacio(espId) {
   for (const p of prods) new Set(p.cats.map((c) => raiz(c)?.id).filter(Boolean)).forEach((id) => cuentas.set(id, (cuentas.get(id) || 0) + 1));
   if (E.catPlano && !cuentas.has(E.catPlano)) E.catPlano = null;
   const visibles = E.catPlano ? prods.filter((p) => p.cats.some((c) => descendientes(E.catPlano).has(c))) : prods;
-  const suma = visibles.reduce((s, p) => s + (mejorOferta(p)?.precio ?? 0), 0);
+  // Primero los elegidos
+  visibles.sort((x, y) => elegido(y) - elegido(x));
   const chips = cuentas.size > 1 || E.catPlano
     ? `<div class="fila-chips">${[`<button class="chip-vista ${E.catPlano ? "" : "activa"}" data-cat-plano="">Todas <span>${prods.length}</span></button>`,
         ...[...cuentas].sort((x, y) => y[1] - x[1]).map(([id, n]) => `<button class="chip-vista ${E.catPlano === id ? "activa" : ""}" data-cat-plano="${id}">${esc(catPorId(id).nombre)} <span>${n}</span></button>`)].join("")}</div>`
@@ -555,11 +591,12 @@ function panelEspacio(espId) {
       <div>
         <div class="pequeno">📍 Espacio</div>
         <h2>${esc(e ? e.nombre : "Sin espacio")}</h2>
-        <p class="pequeno" style="margin:2px 0 0">${visibles.length} ${visibles.length === 1 ? "producto" : "productos"}${visibles.length ? ` · ${euros(suma)}` : ""}</p>
+        <p class="pequeno" style="margin:2px 0 0">${textoTotal(visibles) || "Sin productos"}</p>
       </div>
       <button class="btn icono" data-cerrar-esp aria-label="Cerrar">✕</button>
     </div>
     ${chips}
+    ${visibles.length && !visibles.some(elegido) ? `<p class="pequeno pista-elegir">Marca con ✓ los que vais a comprar para que sumen en el total.</p>` : ""}
     <div class="lista-lateral">
       ${visibles.map(filaProducto).join("") || `<div class="vacio-lateral"><p>Aún no hay nada guardado aquí.</p><button class="btn mini primario" data-accion="anadir">+ Añadir producto</button></div>`}
     </div>
@@ -574,7 +611,8 @@ function filaProducto(p) {
   const o = mejorOferta(p);
   const baja = Math.max(0, ...p.ofertas.map(bajadaReciente));
   const nT = new Set(p.ofertas.map((x) => x.tienda)).size;
-  return `<article class="fila-producto ${p.estado !== "pendiente" ? "apagada" : ""}" data-producto-lateral="${p.id}">
+  return `<article class="fila-producto ${p.estado !== "pendiente" ? "apagada" : ""} ${elegido(p) ? "elegida" : ""}" data-producto-lateral="${p.id}">
+    ${botonElegir(p)}
     <div class="mini-foto">${img(p.imagen || o?.imagen, p.nombre)}</div>
     <div class="fp-info">
       <div class="fp-nombre">${esc(p.nombre)}</div>
@@ -758,6 +796,8 @@ function pintarRejilla() {
 
   pintarTitulo();
   pintarChipsCategorias();
+  const rl = $("#resumen-lista");
+  if (rl) rl.innerHTML = textoTotal(lista);
   if (E.modoSel) setTimeout(pintarBarraSel, 0);
   $("#rejilla").innerHTML = lista.map(tarjeta).join("");
   const vacio = $("#vacio");
@@ -884,7 +924,7 @@ function tarjeta(p) {
   const dto = o?.precio_original && o.precio ? Math.round((1 - o.precio / o.precio_original) * 100) : 0;
   const nTiendas = new Set(p.ofertas.map((x) => x.tienda)).size;
   const sel = E.modoSel && E.sel.has(p.id);
-  return `<article class="tarjeta ${p.estado !== "pendiente" ? "apagada" : ""} ${E.modoSel ? "en-seleccion" : ""} ${sel ? "seleccionada" : ""}" data-producto="${p.id}">
+  return `<article class="tarjeta ${p.estado !== "pendiente" ? "apagada" : ""} ${E.modoSel ? "en-seleccion" : ""} ${sel ? "seleccionada" : ""} ${elegido(p) ? "elegida" : ""}" data-producto="${p.id}">
     <div class="foto">
       ${E.modoSel ? `<span class="casilla" aria-hidden="true">${sel ? "✓" : ""}</span>` : ""}
       ${img(p.imagen || o?.imagen, p.nombre)}
@@ -901,7 +941,7 @@ function tarjeta(p) {
         ${o?.precio_original ? `<span class="precio-orig">${euros(o.precio_original)}</span>` : ""}
       </div>
       ${p.pack_unidades ? `<div class="pack-linea"><span class="etq pack">Pack ×${p.pack_unidades}</span>${o?.precio ? ` <span class="pequeno">${euros(o.precio / p.pack_unidades)}/ud</span>` : ""}</div>` : ""}
-      ${o ? `<div class="acciones"><a class="btn mini" href="${esc(o.url)}" target="_blank" rel="noopener" data-parar>Ir a la oferta ↗</a></div>` : ""}
+      <div class="acciones">${botonElegir(p, "en-tarjeta")}${o ? `<a class="btn mini" href="${esc(o.url)}" target="_blank" rel="noopener" data-parar>Ir a la oferta ↗</a>` : ""}</div>
     </div>
   </article>`;
 }
@@ -1201,6 +1241,7 @@ async function abrirDetalle(id) {
 function pintarDetalle() {
   const p = E.prods.find((x) => x.id === D.id);
   if (!p) { $("#dlg-detalle").close(); return; }
+  $("#detalle-titulo").textContent = p.nombre;
   const mejor = mejorOferta(p);
   const ofertas = [...p.ofertas].sort((a, b) => (a.precio ?? Infinity) - (b.precio ?? Infinity));
   const otros = E.prods.filter((x) => x.id !== p.id).sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
@@ -1215,6 +1256,7 @@ function pintarDetalle() {
           </select></label>
           <label>Marca<input type="text" id="d-marca" value="${esc(p.marca ?? "")}"></label>
         </div>
+        <label class="interruptor elegir-detalle"><input type="checkbox" data-elegir-detalle ${elegido(p) ? "checked" : ""}> <b>Lo vamos a comprar</b> <span class="pequeno">(cuenta en los totales)</span></label>
         <div class="campo-pack">
           <label class="interruptor"><input type="checkbox" id="d-es-pack" ${p.pack_unidades ? "checked" : ""}> El precio es de un <b>pack</b></label>
           <label class="unidades" ${p.pack_unidades ? "" : "hidden"}>de <input type="number" id="d-pack" min="2" max="99" value="${p.pack_unidades ?? 2}" inputmode="numeric"> unidades</label>
@@ -1281,7 +1323,8 @@ function pintarGrafica() {
   }).filter((s) => s.pts.length);
   const todos = series.flatMap((s) => s.pts);
   if (!todos.length) { cont.innerHTML = `<p class="pequeno">Aún no hay precios registrados.</p>`; return; }
-  const W = 800, H = 180, m = { l: 62, r: 12, t: 12, b: 24 };
+  // El ancho del dibujo es el real del recuadro, para que los textos no se deformen
+  const W = Math.max(280, Math.round(cont.clientWidth - 22) || 800), H = 180, m = { l: 62, r: 12, t: 12, b: 24 };
   let t0 = Math.min(...todos.map((x) => x.t)), t1 = Date.now();
   if (t1 - t0 < 864e5) t0 = t1 - 864e5;
   let v0 = Math.min(...todos.map((x) => x.v)), v1 = Math.max(...todos.map((x) => x.v));
@@ -1292,7 +1335,7 @@ function pintarGrafica() {
   const ticks = [v0 + (v1 - v0) * 0.1, (v0 + v1) / 2, v1 - (v1 - v0) * 0.1];
   const f = (t) => new Date(t).toLocaleDateString("es-ES", { day: "numeric", month: "short" });
   const camino = (pts) => pts.map((q, i) => (i ? `H${X(q.t).toFixed(1)}V${Y(q.v).toFixed(1)}` : `M${X(q.t).toFixed(1)},${Y(q.v).toFixed(1)}`)).join("");
-  cont.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Historial de precios">
+  cont.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Historial de precios">
     ${ticks.map((v) => `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="#eee5d8"/><text x="${m.l - 8}" y="${Y(v) + 4}" text-anchor="end" font-size="11" fill="#948a7c">${euros(v)}</text>`).join("")}
     <text x="${m.l}" y="${H - 6}" font-size="11" fill="#948a7c">${f(t0)}</text>
     <text x="${W - m.r}" y="${H - 6}" font-size="11" fill="#948a7c" text-anchor="end">hoy</text>
@@ -1831,6 +1874,7 @@ $("#btn-gestionar-esps").onclick = abrirGestionEspacios;
 $("#form-url").onsubmit = (e) => { e.preventDefault(); leer(); };
 $("#in-url").addEventListener("paste", () => setTimeout(() => { if (/^https?:\/\//.test($("#in-url").value.trim())) leer(); }, 0));
 $("#detalle").addEventListener("click", accionDetalle);
+$("#detalle").addEventListener("change", (e) => { if (e.target.matches("[data-elegir-detalle]") && D) cambiarElegidos([D.id], e.target.checked); });
 $("#gestion-cats").addEventListener("click", accionCats);
 $("#gestion-cats").addEventListener("change", cambioCats);
 
@@ -2112,6 +2156,11 @@ $("#sel-estado").onchange = async (e) => {
   const estado = e.target.value; e.target.value = "";
   if (!estado || !E.sel.size) return;
   const ids = [...E.sel];
+  if (estado === "elegir" || estado === "no-elegir") {
+    const ok = await cambiarElegidos(ids, estado === "elegir");
+    if (ok) { salirSeleccion(); tostada(estado === "elegir" ? `${ids.length} producto(s) elegidos para comprar` : `${ids.length} producto(s) quitados de los elegidos`); }
+    return;
+  }
   const { error } = await sb.from("productos").update({ estado }).in("id", ids);
   if (error) return tostada("Error: " + error.message);
   salirSeleccion(); await cargar();

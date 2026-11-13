@@ -73,6 +73,7 @@
           <div class="cabecera-vista">
             <div class="ruta-padre" id="ruta-padre" hidden></div>
             <h2 id="titulo-vista">Todo</h2>
+            <div class="pequeno resumen-lista" id="resumen-lista"></div>
           </div>
           <div class="filtros">
             <select id="f-estado" aria-label="Estado">
@@ -121,7 +122,7 @@
   <!-- Diálogo: detalle -->
   <dialog id="dlg-detalle" class="dialogo ancho">
     <form method="dialog" class="dlg-cab">
-      <h3>Detalle</h3>
+      <h3 id="detalle-titulo" class="titulo-dlg">Detalle</h3>
       <button class="btn icono" value="cerrar" aria-label="Cerrar">✕</button>
     </form>
     <div class="dlg-cuerpo" id="detalle"></div>
@@ -158,6 +159,8 @@
         <option value="pendiente">Pendiente</option>
         <option value="comprado">Comprado</option>
         <option value="descartado">Descartado</option>
+        <option value="elegir">✓ Elegido para comprar</option>
+        <option value="no-elegir">Quitar de elegidos</option>
       </select>
       <button class="btn mini sel-borrar" id="sel-borrar">🗑 Eliminar</button>
       <button class="btn mini" id="sel-cancelar">Cancelar</button>
