@@ -292,8 +292,13 @@ function pintarEspacios() {
   $("#lista-espacios").innerHTML = E.esps.map((e) => {
     const n = base.filter((p) => p.esps.includes(e.id)).length;
     return `<button class="cat espacio ${E.filtro.esp === e.id ? "activa" : ""}" data-esp="${e.id}"><span class="flecha">📍</span><span>${esc(e.nombre)}</span><span class="n">${n}</span></button>`;
-  }).join("") + (sin && E.esps.length ? `<button class="cat espacio ${E.filtro.esp === "sin" ? "activa" : ""}" data-esp="sin"><span class="flecha"></span><span>Sin espacio</span><span class="n">${sin}</span></button>` : "")
+  }).join("")
+    + `<div class="separador"></div><button class="cat espacio sin-espacio ${E.filtro.esp === "sin" ? "activa" : ""}" data-esp="sin"><span class="flecha">∅</span><span>Sin espacio</span><span class="n">${sin}</span></button>`
     + `<button class="cat nuevo-espacio" data-nuevo-esp><span class="flecha">＋</span><span>Nuevo espacio</span></button>`;
+  // Desplegable de espacio en la barra de filtros (útil en el móvil, sin abrir el menú)
+  const fe = $("#f-espacio");
+  if (fe) fe.innerHTML = `<option value="">Todos los espacios</option><option value="sin" ${E.filtro.esp === "sin" ? "selected" : ""}>Sin espacio (${sin})</option>`
+    + E.esps.map((e) => `<option value="${e.id}" ${E.filtro.esp === e.id ? "selected" : ""}>📍 ${esc(e.nombre)}</option>`).join("");
 }
 
 // Selector de espacios (chips que se activan/desactivan)
@@ -382,7 +387,7 @@ function pintarTitulo() {
     rp.hidden = !chipEsp;
     rp.innerHTML = chipEsp;
     h2.textContent = f.cat === "sin" ? "Sin categoría" : f.esp === "sin" ? "Sin espacio" : "Todo";
-    if (f.esp === "sin" && f.cat === "todas") { rp.hidden = true; }
+    if (f.esp === "sin" && f.cat === "todas") { rp.hidden = false; rp.innerHTML = `Productos sin ningún espacio asignado · <a href="#" data-quitar-esp>ver todos</a>`; }
     return;
   }
   // Ruta de categorías padre, pulsables
@@ -1395,6 +1400,7 @@ let tBuscar;
 $("#buscar").oninput = (e) => { clearTimeout(tBuscar); tBuscar = setTimeout(() => { E.filtro.q = e.target.value; pintar(); }, 150); };
 $("#f-estado").onchange = (e) => { E.filtro.estado = e.target.value; pintar(); };
 $("#f-tienda").onchange = (e) => { E.filtro.tienda = e.target.value; pintar(); };
+$("#f-espacio").onchange = (e) => { E.filtro.esp = e.target.value; pintar(); };
 $("#f-orden").onchange = (e) => { E.filtro.orden = e.target.value; pintarRejilla(); };
 $("#f-bajadas").onchange = (e) => { E.filtro.bajadas = e.target.checked; pintar(); };
 
