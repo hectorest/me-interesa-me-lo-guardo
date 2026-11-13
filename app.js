@@ -33,7 +33,8 @@ const E = {
   esps: [],
   zonas: [], // zonas del plano (forma, nombre, color, espacio)
   editor: null, // editor del plano abierto
-  vistaLateral: leerLocal("vista-lateral", "cuadricula"), // productos del panel del plano: cuadrícula o lista
+  vistaLateral: leerLocal("vista-lateral", "cuadricula"),
+  carritoPor: leerLocal("carrito-por", "espacio"), // productos del panel del plano: cuadrícula o lista
   vista: leerLocal("vista", "plano"),
   filtro: { cat: "todas", esp: "", estado: "pendiente", tienda: "", orden: "recientes", q: "", bajadas: false },
   abiertas: new Set(leerLocal("cats-abiertas", [])),
@@ -311,6 +312,70 @@ function pintar() {
   pintarTiendas();
   pintarRejilla();
   pintarPlano();
+  pintarCarrito();
+}
+
+// ---------------- Carrito: todo lo elegido para comprar ----------------
+function pintarCarrito() {
+  const elegidos = E.prods.filter(elegido);
+  const pendientes = elegidos.filter((p) => p.estado === "pendiente");
+  const comprados = elegidos.filter((p) => p.estado === "comprado");
+  const nc = $("#n-carrito");
+  if (nc) nc.textContent = pendientes.length ? pendientes.length : "";
+  const cont = $("#vista-carrito");
+  if (E.vista !== "carrito") { cont.innerHTML = ""; return; }
+  const agrupar = E.carritoPor || "espacio";
+  const grupos = new Map();
+  for (const p of pendientes) {
+    let claves;
+    if (agrupar === "tienda") claves = [mejorOferta(p)?.tienda || "Sin tienda"];
+    else claves = [p.esps.length ? espPorId(p.esps[0])?.nombre ?? "Sin espacio" : "Sin espacio"];
+    for (const k of claves) grupos.set(k, [...(grupos.get(k) || []), p]);
+  }
+  const orden = [...grupos.keys()].sort((x, y) => x.localeCompare(y, "es"));
+  const fila = (p) => {
+    const o = mejorOferta(p);
+    return `<article class="fila-carrito ${p.estado === "comprado" ? "comprada" : ""}" data-producto-carrito="${p.id}">
+      <div class="mini-foto">${img(p.imagen || o?.imagen, p.nombre)}</div>
+      <div class="fp-info">
+        <div class="fp-nombre">${esc(p.nombre)}</div>
+        <div class="fp-meta">${esc(o?.tienda ?? "")}${agrupar === "tienda" && p.esps.length ? ` · 📍 ${esc(espPorId(p.esps[0])?.nombre ?? "")}` : ""}${p.pack_unidades ? ` · <span class="etq pack">Pack ×${p.pack_unidades}</span>` : ""}${o?.disponible === false ? " · <b>sin stock</b>" : ""}</div>
+      </div>
+      <div class="fp-precio"><b>${euros(o?.precio)}</b>${o?.precio_original ? `<s>${euros(o.precio_original)}</s>` : ""}</div>
+      <div class="acciones-carrito">
+        ${o ? `<a class="btn mini" href="${esc(o.url)}" target="_blank" rel="noopener" data-parar>Comprar ↗</a>` : ""}
+        ${p.estado === "comprado"
+          ? `<button class="btn mini" data-estado-carrito="pendiente" data-id="${p.id}">Deshacer</button>`
+          : `<button class="btn mini primario" data-estado-carrito="comprado" data-id="${p.id}" title="Ya lo habéis comprado">✓ Comprado</button>`}
+        <button class="btn mini" data-quitar-carrito="${p.id}" title="Quitar del carrito (sigue guardado)">✕</button>
+      </div>
+    </article>`;
+  };
+  const total = totalElegidos(pendientes), gastado = totalElegidos(comprados);
+  const tiendas = new Set(pendientes.map((p) => mejorOferta(p)?.tienda).filter(Boolean)).size;
+  cont.innerHTML = `
+    <div class="carrito-cab">
+      <div>
+        <h2>Carrito</h2>
+        <p class="pequeno">Lo que habéis elegido para comprar. Marca <b>✓</b> en cualquier producto para añadirlo.</p>
+      </div>
+      <div class="total-caja grande"><small>Por comprar</small><b>${euros(total)}</b><small>${pendientes.length} productos${tiendas ? ` · ${tiendas} ${tiendas === 1 ? "tienda" : "tiendas"}` : ""}</small></div>
+    </div>
+    ${pendientes.length ? `
+      <div class="barra-carrito">
+        <button type="button" class="btn mini" id="actualizar-carrito" title="Vuelve a leer el precio de cada tienda">↻ Actualizar precios</button>
+        <span class="pequeno" id="estado-actualizar"></span>
+      </div>
+      <div class="conmutador-vista"><button type="button" class="${agrupar === "espacio" ? "activa" : ""}" data-agrupar="espacio">📍 Por espacio</button><button type="button" class="${agrupar === "tienda" ? "activa" : ""}" data-agrupar="tienda">🏬 Por tienda</button></div>
+      ${orden.map((k) => `<section class="grupo-carrito">
+        <div class="grupo-cab"><h3>${esc(k)}</h3><span>${grupos.get(k).length} · <b>${euros(totalElegidos(grupos.get(k)))}</b></span></div>
+        ${grupos.get(k).map(fila).join("")}
+      </section>`).join("")}`
+    : `<div class="vacio"><h3>El carrito está vacío</h3><p>Marca con <span class="check-elegir on mini-demo">✓</span> los productos que vais a comprar, desde el plano o la lista.</p></div>`}
+    ${comprados.length ? `<section class="grupo-carrito comprados">
+      <div class="grupo-cab"><h3>Ya comprado</h3><span>${comprados.length} · <b>${euros(gastado)}</b></span></div>
+      ${comprados.map(fila).join("")}
+    </section>` : ""}`;
 }
 
 // ---------------- Vista de plano ----------------
@@ -326,6 +391,7 @@ function cambiarVista(v) {
   E.vista = v;
   guardarLocal("vista", v);
   document.body.classList.toggle("en-plano", v === "plano");
+  document.body.classList.toggle("en-carrito", v === "carrito");
   $$(".pestanas-vista button").forEach((b) => { b.classList.toggle("activa", b.dataset.vista === v); b.setAttribute("aria-selected", b.dataset.vista === v); });
   if (v === "plano" && E.modoSel) salirSeleccion();
   pintar();
@@ -345,6 +411,7 @@ function infoZona(z) {
     subtitulo: "",
     asignada: true,
     n: e ? base.filter((p) => p.esps.includes(e.id)).length : 0,
+    nElegidos: e ? base.filter((p) => p.esps.includes(e.id) && elegido(p)).length : 0,
   };
 }
 const svgDe = (zonas, edicion = null) => svgPlano({ zonas, info: infoZona, horizontal: esHorizontal(), edicion });
@@ -735,7 +802,8 @@ function pintarEspacios() {
   const sin = base.filter((p) => !p.esps.length).length;
   $("#lista-espacios").innerHTML = E.esps.map((e) => {
     const n = base.filter((p) => p.esps.includes(e.id)).length;
-    return `<button class="cat espacio ${E.filtro.esp === e.id ? "activa" : ""}" data-esp="${e.id}"><span class="flecha">📍</span><span>${esc(e.nombre)}</span><span class="n">${n}</span></button>`;
+    const ne = base.filter((p) => p.esps.includes(e.id) && elegido(p)).length;
+    return `<button class="cat espacio ${E.filtro.esp === e.id ? "activa" : ""}" data-esp="${e.id}"><span class="flecha">📍</span><span>${esc(e.nombre)}</span><span class="n">${n}${ne ? ` <i class="n-eleg" title="${ne} para comprar">✓${ne}</i>` : ""}</span></button>`;
   }).join("")
     + `<div class="separador"></div><button class="cat espacio sin-espacio ${E.filtro.esp === "sin" ? "activa" : ""}" data-esp="sin"><span class="flecha">∅</span><span>Sin espacio</span><span class="n">${sin}</span></button>`
     + `<button class="cat nuevo-espacio" data-nuevo-esp><span class="flecha">＋</span><span>Nuevo espacio</span></button>`;
@@ -1806,6 +1874,7 @@ async function iniciar() {
   $("#pantalla-acceso").hidden = true;
   $("#app").hidden = false;
   document.body.classList.toggle("en-plano", E.vista === "plano");
+  document.body.classList.toggle("en-carrito", E.vista === "carrito");
   $$(".pestanas-vista button").forEach((b) => b.classList.toggle("activa", b.dataset.vista === E.vista));
   await cargar();
   procesarEntrada(entrada);
@@ -1905,6 +1974,71 @@ $("#titulo-vista").addEventListener("keydown", (e) => {
   if (e.key === "Escape") { e.target.value = nombreActual(e.target) ?? e.target.value; ajustarAnchoTitulo(); e.target.blur(); }
 });
 $("#titulo-vista").addEventListener("focusout", (e) => { if (e.target.id === "titulo-cat") guardarNombreCategoria(e.target); });
+// Vuelve a leer el precio de todas las ofertas de unos productos (de 3 en 3)
+async function actualizarPrecios(prods, alAvanzar = () => {}) {
+  const ofertas = prods.flatMap((p) => p.ofertas.map((o) => ({ p, o })));
+  const res = { total: ofertas.length, hechas: 0, cambiadas: [], fallidas: [] };
+  const cola = [...ofertas];
+  const trabajador = async () => {
+    while (cola.length) {
+      const { p, o } = cola.shift();
+      try {
+        const { data, error } = await sb.functions.invoke("extraer", { body: { url: o.url } });
+        if (error) throw error;
+        const ok = data && !data.error && data.precio != null;
+        await sb.rpc("registrar_revision", { p_oferta: o.id, p_precio: ok ? data.precio : null, p_precio_original: ok ? data.precioOriginal : null, p_disponible: ok ? data.disponible : null,
+          p_error: ok ? null : data?.bloqueado ? "La tienda bloqueó la lectura" : (data?.error || "No se encontró el precio") });
+        if (!ok) res.fallidas.push(`${p.nombre} (${o.tienda})`);
+        else if (o.precio != null && data.precio !== o.precio) res.cambiadas.push({ nombre: p.nombre, tienda: o.tienda, antes: o.precio, ahora: data.precio });
+      } catch {
+        res.fallidas.push(`${p.nombre} (${o.tienda})`);
+      }
+      res.hechas++;
+      alAvanzar(res);
+    }
+  };
+  await Promise.all([trabajador(), trabajador(), trabajador()]);
+  return res;
+}
+
+$("#vista-carrito").addEventListener("click", async (e) => {
+  if (e.target.closest("[data-parar]")) return;
+  const act = e.target.closest("#actualizar-carrito");
+  if (act) {
+    const prods = E.prods.filter((p) => elegido(p) && p.estado === "pendiente");
+    act.disabled = true;
+    act.innerHTML = `<span class="girando"></span> Actualizando…`;
+    const estado = $("#estado-actualizar");
+    const res = await actualizarPrecios(prods, (r) => { if (estado.isConnected) estado.textContent = `${r.hechas} de ${r.total} ofertas revisadas`; });
+    await cargar();
+    const bajan = res.cambiadas.filter((c) => c.ahora < c.antes), suben = res.cambiadas.filter((c) => c.ahora > c.antes);
+    const partes = [`${res.total - res.fallidas.length} de ${res.total} precios leídos`];
+    if (bajan.length) partes.push(`${bajan.length} han bajado (−${euros(bajan.reduce((s, c) => s + c.antes - c.ahora, 0))})`);
+    if (suben.length) partes.push(`${suben.length} han subido`);
+    if (!res.cambiadas.length) partes.push("sin cambios");
+    const est = $("#estado-actualizar");
+    if (est) est.innerHTML = partes.join(" · ") + (res.fallidas.length ? `<br><span class="aviso-fallidas">No se pudo leer: ${res.fallidas.map(esc).join(", ")}. Puedes actualizarlos con el marcador o a mano en su ficha.</span>` : "");
+    tostada(partes.join(" · "), 6000);
+    return;
+  }
+  const ag = e.target.closest("[data-agrupar]");
+  if (ag) { E.carritoPor = ag.dataset.agrupar; guardarLocal("carrito-por", E.carritoPor); pintarCarrito(); return; }
+  const q = e.target.closest("[data-quitar-carrito]");
+  if (q) { cambiarElegidos([q.dataset.quitarCarrito], false); return; }
+  const st = e.target.closest("[data-estado-carrito]");
+  if (st) {
+    const p = E.prods.find((x) => x.id === st.dataset.id);
+    const antes = p.estado;
+    p.estado = st.dataset.estadoCarrito;
+    pintar();
+    const { error } = await sb.from("productos").update({ estado: p.estado }).eq("id", p.id);
+    if (error) { p.estado = antes; pintar(); tostada("Error: " + error.message); }
+    else tostada(p.estado === "comprado" ? `«${p.nombre}» comprado 🎉` : "Vuelve al carrito");
+    return;
+  }
+  const f = e.target.closest("[data-producto-carrito]");
+  if (f) abrirDetalle(f.dataset.productoCarrito);
+});
 $$(".pestanas-vista button").forEach((b) => (b.onclick = () => { if (b.dataset.vista === "lista") { E.filtro.esp = ""; E.filtro.cat = "todas"; } cambiarVista(b.dataset.vista); }));
 $("#vista-plano").addEventListener("click", (e) => {
   if (E.editor) return;

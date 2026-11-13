@@ -147,13 +147,17 @@ export function svgPlano({ zonas, info, horizontal = false, edicion = null }) {
     const disponible = (vertical ? altoP : Math.min(anchoP, radio * 3)) * 0.85;
     const pequena = radio < 50;
     const base = pequena ? 20 : 34;
-    const titulo = i.titulo + (pequena && i.n ? ` (${i.n})` : "");
+    const titulo = i.titulo + (pequena && i.n ? ` (${i.n}${i.nElegidos ? ` · ✓${i.nElegidos}` : ""})` : "");
     const tam = Math.max(12, Math.min(base, disponible / (String(titulo).length * 0.56)));
     const giro = (horizontal ? 90 : 0) + (vertical ? -90 : 0);
     const conSub = !pequena && i.subtitulo, conBurbuja = !pequena && i.n;
     const yT = y - (conSub || conBurbuja ? tam * 0.3 : -tam * 0.35);
     const sub = conSub ? `<text x="${x}" y="${yT + 24}" class="t-sub">${escapar(i.subtitulo)}</text>` : "";
-    const burbuja = conBurbuja ? `<g class="burbuja" transform="translate(${x} ${yT + (conSub ? 58 : 34)})"><rect x="-32" y="-15" width="64" height="30" rx="15"/><text y="6">${i.n}</text></g>` : "";
+    // Burbujas: productos guardados y, en verde, los elegidos para comprar
+    const burbuja = conBurbuja ? (i.nElegidos
+      ? `<g class="burbuja" transform="translate(${x - 36} ${yT + (conSub ? 58 : 34)})"><rect x="-32" y="-15" width="64" height="30" rx="15"/><text y="6">${i.n}</text></g>
+         <g class="burbuja elegidos" transform="translate(${x + 36} ${yT + (conSub ? 58 : 34)})"><rect x="-34" y="-15" width="68" height="30" rx="15"/><text y="6">✓ ${i.nElegidos}</text></g>`
+      : `<g class="burbuja" transform="translate(${x} ${yT + (conSub ? 58 : 34)})"><rect x="-32" y="-15" width="64" height="30" rx="15"/><text y="6">${i.n}</text></g>`) : "";
     return `<g class="etiqueta ${i.asignada ? "" : "libre"}" ${giro ? `transform="rotate(${giro} ${x} ${y})"` : ""}>
       <text x="${x}" y="${yT}" class="t-nombre" style="font-size:${tam.toFixed(1)}px">${escapar(titulo)}</text>${sub}${burbuja}
     </g>`;
