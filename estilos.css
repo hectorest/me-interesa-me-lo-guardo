@@ -19,6 +19,7 @@
 
 * { box-sizing: border-box; }
 html, body { margin: 0; }
+html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 body { font-family: var(--sans); background: var(--fondo); color: var(--tinta); font-size: 15px; line-height: 1.45; -webkit-font-smoothing: antialiased; }
 [hidden] { display: none !important; }
 a { color: var(--acento-2); }
@@ -175,6 +176,8 @@ label { display: grid; gap: 6px; font-size: 13px; font-weight: 500; color: var(-
 .solo-movil { display: none; }
 
 @media (max-width: 820px) {
+  /* iOS hace zoom al enfocar campos con letra menor de 16px */
+  input, select, textarea { font-size: 16px !important; }
   .solo-movil { display: inline-flex; }
   .cabecera { flex-wrap: wrap; padding: 10px 12px; gap: 8px; }
   .marca.pequena { font-size: 16px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }

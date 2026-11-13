@@ -1034,6 +1034,51 @@ document.addEventListener("visibilitychange", () => {
 });
 window.addEventListener("hashchange", () => { if (E.usuario && location.hash.startsWith("#importar=")) procesarEntrada(leerEntrada()); });
 
-if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+// ---------------- Sin zoom ----------------
+// iOS ignora user-scalable=no en el viewport: bloqueamos el gesto de pellizco y el doble toque
+["gesturestart", "gesturechange", "gestureend"].forEach((ev) => document.addEventListener(ev, (e) => e.preventDefault(), { passive: false }));
+document.addEventListener("touchmove", (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+// El doble toque lo evita touch-action: manipulation (CSS)
+
+// ---------------- Siempre la última versión ----------------
+// El service worker pide los archivos a la red sin caché; además se comprueba
+// version.json al volver a la app y cada pocos minutos, y si hay versión nueva se recarga.
+let versionActual = null, recargaPendiente = false;
+async function comprobarVersion() {
+  try {
+    const r = await fetch("version.json?t=" + Date.now(), { cache: "no-store" });
+    if (!r.ok) return;
+    const { version } = await r.json();
+    if (versionActual == null) { versionActual = version; return; }
+    if (version !== versionActual) recargaPendiente = true;
+  } catch { /* sin conexión */ }
+  if (recargaPendiente) recargarSiSePuede();
+}
+function recargarSiSePuede() {
+  if ($("dialog[open]") || $("#form-nueva-clave:not([hidden])")) {
+    tostada("Hay una versión nueva de la app: se actualizará al cerrar esta ventana.", 4000);
+    return;
+  }
+  location.reload();
+}
+$$("dialog").forEach((d) => d.addEventListener("close", () => { if (recargaPendiente) setTimeout(recargarSiSePuede, 300); }));
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") {
+    comprobarVersion();
+    navigator.serviceWorker?.getRegistration().then((r) => r?.update()).catch(() => {});
+  }
+});
+window.addEventListener("focus", comprobarVersion);
+setInterval(comprobarVersion, 5 * 60 * 1000);
+comprobarVersion();
+
+if ("serviceWorker" in navigator) {
+  const habiaControlador = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then((r) => r.update()).catch(() => {});
+  // Cuando se instala un service worker nuevo, recargamos para usarlo
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (habiaControlador) { recargaPendiente = true; recargarSiSePuede(); }
+  });
+}
 
 iniciar();
