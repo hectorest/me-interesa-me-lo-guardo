@@ -1,6 +1,7 @@
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 import { enlaceMarcador } from "./marcador.js";
-import { ZONAS, svgPlano } from "./plano.js";
+import { svgPlano, zonasPorDefecto } from "./plano.js";
+import { EditorPlano } from "./planoEditor.js";
 
 // ---------------- Configuración ----------------
 const SUPABASE_URL = "https://qwtogbdmzcstecxhigvq.supabase.co";
@@ -30,7 +31,8 @@ const E = {
   cats: [],
   prods: [],
   esps: [],
-  zonasPlano: [], // filas de plano_zonas
+  zonas: [], // zonas del plano (forma, nombre, color, espacio)
+  editor: null, // editor del plano abierto
   vista: leerLocal("vista", "plano"),
   filtro: { cat: "todas", esp: "", estado: "pendiente", tienda: "", orden: "recientes", q: "", bajadas: false },
   abiertas: new Set(leerLocal("cats-abiertas", [])),
@@ -222,7 +224,9 @@ async function cargar() {
     sb.from("espacios").select("*").order("orden").order("nombre"),
     sb.from("plano_zonas").select("*"),
   ]);
-  E.zonasPlano = z.error ? [] : z.data;
+  E.zonas = !z.error && z.data.length
+    ? z.data.sort((x, y) => x.orden - y.orden).map((r) => ({ id: r.zona, nombre: r.nombre, color: r.color, espacio_id: r.espacio_id, poligonos: r.poligonos, orden: r.orden }))
+    : zonasPorDefecto();
   if (c.error || p.error || s.error) { tostada("Error al cargar: " + (c.error || p.error || s.error).message); return; }
   E.cats = c.data;
   E.esps = s.data;
@@ -269,12 +273,12 @@ function pintar() {
 }
 
 // ---------------- Vista de plano ----------------
-// Espacio asociado a cada estancia: solo el que elijáis vosotros (sin asignación automática)
-function espacioDeZona(z) {
-  const fila = E.zonasPlano.find((r) => r.zona === z.id);
-  return fila ? espPorId(fila.espacio_id) ?? null : null;
-}
+const espacioDeZona = (z) => (z?.espacio_id ? espPorId(z.espacio_id) ?? null : null);
+const zonaPorId = (id) => E.zonas.find((z) => z.id === id);
+const esHorizontal = () => matchMedia("(min-width: 900px)").matches;
+
 function cambiarVista(v) {
+  if (E.editor && v !== "plano") return tostada("Guarda o cancela los cambios del plano primero");
   E.vista = v;
   guardarLocal("vista", v);
   document.body.classList.toggle("en-plano", v === "plano");
@@ -288,90 +292,138 @@ function irAEspacio(id) {
   E.filtro.cat = "todas";
   cambiarVista("lista");
 }
+// Etiqueta de cada zona: su nombre, el espacio al que va y cuántos productos tiene
+function infoZona(z) {
+  const e = espacioDeZona(z);
+  const base = filtrados({ ignorarEsp: true, ignorarCat: true });
+  return {
+    titulo: z.nombre,
+    subtitulo: e ? (norm(e.nombre) === norm(z.nombre) ? "" : "📍 " + e.nombre) : E.editor ? "" : "Toca para asignar",
+    asignada: !!e,
+    n: e ? base.filter((p) => p.esps.includes(e.id)).length : 0,
+  };
+}
+const svgDe = (zonas, edicion = null) => svgPlano({ zonas, info: infoZona, horizontal: esHorizontal(), edicion });
+
 function pintarPlano() {
   const cont = $("#vista-plano");
+  if (E.editor) return; // el editor se encarga de su propio pintado
   if (E.vista !== "plano") { cont.innerHTML = ""; return; }
   const base = filtrados({ ignorarEsp: true, ignorarCat: true });
-  const cuenta = (espId) => base.filter((p) => p.esps.includes(espId)).length;
   const sumaDe = (lista) => lista.reduce((s, p) => s + (mejorOferta(p)?.precio ?? 0), 0);
-  const editando = document.body.classList.contains("editando-plano");
-  const horizontal = matchMedia("(min-width: 900px)").matches;
-  cont.classList.toggle("horizontal", horizontal);
-  const svg = svgPlano((z) => {
-    const e = espacioDeZona(z);
-    return {
-      titulo: esc(e?.nombre ?? z.nombre),
-      subtitulo: e ? "" : "Toca para asignar",
-      asignada: !!e,
-      n: e ? cuenta(e.id) : 0,
-    };
-  }, { horizontal });
+  cont.classList.toggle("horizontal", esHorizontal());
   // Resumen por espacio (incluye los que no están en el plano)
   const enPlano = new Map();
-  for (const z of ZONAS) { const e = espacioDeZona(z); if (e) enPlano.set(e.id, [...(enPlano.get(e.id) || []), z]); }
+  for (const z of E.zonas) { if (z.espacio_id && espPorId(z.espacio_id)) enPlano.set(z.espacio_id, [...(enPlano.get(z.espacio_id) || []), z]); }
   const filas = E.esps.map((e) => {
     const prods = base.filter((p) => p.esps.includes(e.id));
-    const fuera = !enPlano.has(e.id);
-    return `<button class="fila-espacio ${fuera ? "fuera" : ""}" data-ir-esp="${e.id}" data-zonas="${(enPlano.get(e.id) || []).map((z) => z.id).join(" ")}">
+    const zs = enPlano.get(e.id) || [];
+    return `<button class="fila-espacio ${zs.length ? "" : "fuera"}" data-ir-esp="${e.id}" data-zonas="${zs.map((z) => esc(z.id)).join(" ")}">
       <b>📍 ${esc(e.nombre)}</b><span class="n">${prods.length} ${prods.length === 1 ? "cosa" : "cosas"}</span>
-      <small>${fuera ? "No está en el plano" : (enPlano.get(e.id) || []).length > 1 ? `${enPlano.get(e.id).length} estancias del plano` : "En el plano"}${prods.length ? ` · ${euros(sumaDe(prods))}` : ""}</small>
+      <small>${zs.length ? "En el plano: " + zs.map((z) => esc(z.nombre)).join(", ") : "No está en el plano"}${prods.length ? ` · ${euros(sumaDe(prods))}` : ""}</small>
     </button>`;
   }).join("");
   const sinEsp = base.filter((p) => !p.esps.length);
   const total = base.length;
   cont.innerHTML = `
-    <div class="lienzo">${svg}</div>
+    <div class="lienzo">${svgDe(E.zonas)}</div>
     <aside class="panel">
       <div>
         <h2>Vuestra casa</h2>
         <p class="pequeno" style="margin:4px 0 0">${total} ${E.filtro.estado === "pendiente" ? "productos pendientes" : "productos"}${total ? ` · ${euros(sumaDe(base))} si compráis la opción más barata de cada uno` : ""}</p>
       </div>
-      <p class="pequeno aviso-editar">${editando
-        ? `<b>Modo edición:</b> toca una estancia para elegir qué espacio es. <button class="btn mini primario" id="fin-editar-plano">Hecho</button>`
-        : `Toca una estancia para ver lo que habéis guardado para ella. <button class="btn mini" id="editar-plano">✎ Asignar estancias</button>`}</p>
+      <p class="pequeno aviso-editar">Toca una zona para ver lo que habéis guardado para ella. <button class="btn mini" id="editar-plano">✎ Editar plano</button></p>
       <div class="resumen-espacios">${filas}
         ${sinEsp.length ? `<button class="fila-espacio fuera" data-ir-esp="sin"><b>∅ Sin espacio</b><span class="n">${sinEsp.length} ${sinEsp.length === 1 ? "cosa" : "cosas"}</span><small>Productos a los que aún no habéis puesto espacio</small></button>` : ""}
       </div>
     </aside>`;
 }
 
-// Asignar una estancia del plano a un espacio
-function abrirZona(zid) {
-  const z = ZONAS.find((x) => x.id === zid);
-  const actual = espacioDeZona(z);
-  $("#zona-titulo").textContent = `Estancia: ${actual?.nombre ?? z.nombre}`;
+// ---------------- Editor del plano ----------------
+function abrirEditorPlano(selInicial = null) {
+  if (E.vista !== "plano") cambiarVista("plano");
+  const cont = $("#vista-plano");
+  cont.classList.toggle("horizontal", esHorizontal());
+  cont.innerHTML = `<div class="lienzo"></div><aside class="panel editor"></aside>`;
+  document.body.classList.add("editando-plano");
+  E.editor = new EditorPlano({
+    zonas: E.zonas,
+    selInicial,
+    svgDe,
+    esc,
+    espacios: () => E.esps,
+    crearEspacio,
+    tostada,
+    zonasOriginales: zonasPorDefecto,
+    alCancelar: () => { E.editor = null; document.body.classList.remove("editando-plano"); pintar(); },
+    alGuardar: async (zonas) => {
+      await guardarZonas(zonas);
+      E.editor = null;
+      document.body.classList.remove("editando-plano");
+      pintar();
+      tostada("Plano guardado ✓");
+    },
+  });
+  E.editor.montar($(".lienzo", cont), $(".panel", cont));
+}
+async function guardarZonas(zonas) {
+  const ahora = new Date().toISOString();
+  const filas = zonas.map((z, i) => ({ zona: z.id, nombre: z.nombre.trim() || "Zona", color: z.color, espacio_id: z.espacio_id || null, poligonos: z.poligonos, orden: i + 1, actualizado_en: ahora }));
+  const { error } = await sb.from("plano_zonas").upsert(filas);
+  if (error) { tostada("No se pudo guardar el plano: " + error.message, 6000); throw error; }
+  const quitar = E.zonas.map((z) => z.id).filter((id) => !zonas.some((z) => z.id === id));
+  if (quitar.length) {
+    const { error: e2 } = await sb.from("plano_zonas").delete().in("zona", quitar);
+    if (e2) { tostada("No se pudieron borrar zonas: " + e2.message, 6000); throw e2; }
+  }
+  E.zonas = zonas.map((z, i) => ({ ...z, orden: i + 1 }));
+}
+
+// Toque en una zona sin espacio (fuera del editor): elegir espacio o cambiar nombre
+function abrirZona(zid, elegidoIni) {
+  const z = zonaPorId(zid);
+  let elegido = elegidoIni !== undefined ? elegidoIni : z.espacio_id || null;
+  const actual = espPorId(elegido) ?? null;
+  $("#zona-titulo").textContent = z.nombre;
   $("#zona-cuerpo").innerHTML = `
-    <p class="pequeno">¿Qué espacio de la app es esta estancia?</p>
+    <label>Nombre de la zona<input type="text" id="zona-nombre" value="${esc(z.nombre)}" maxlength="40"></label>
+    <p class="pequeno" style="margin:0">¿Qué espacio de la app es? Sus productos aparecerán al tocar la zona.</p>
     <div class="chips chips-esp">
       ${E.esps.map((e) => `<button type="button" class="chip-esp ${actual?.id === e.id ? "on" : ""}" data-asignar="${e.id}">📍 ${esc(e.nombre)}</button>`).join("")}
       <button type="button" class="chip-esp nuevo" data-asignar-nuevo>＋ Nuevo espacio…</button>
     </div>
     <div class="pie-dlg">
-      ${actual ? `<button type="button" class="btn" data-asignar="">Quitar asignación</button>` : ""}
-      ${actual ? `<button type="button" class="btn primario" data-ver-esp="${actual.id}">Ver sus productos</button>` : ""}
+      <button type="button" class="btn" data-editar-forma>✎ Cambiar forma o color</button>
+      ${actual ? `<button type="button" class="btn" data-asignar="">Quitar espacio</button>` : ""}
+      <button type="button" class="btn primario" data-guardar-zona>Guardar</button>
     </div>`;
   $("#zona-cuerpo").onclick = async (e) => {
-    const ver = e.target.closest("[data-ver-esp]");
-    if (ver) { $("#dlg-zona").close(); irAEspacio(ver.dataset.verEsp); return; }
-    let espId;
+    if (e.target.closest("[data-editar-forma]")) { $("#dlg-zona").close(); abrirEditorPlano(z.id); return; }
     if (e.target.closest("[data-asignar-nuevo]")) {
       const n = await crearEspacio();
       if (!n) return;
-      espId = n.id;
-    } else {
-      const b = e.target.closest("[data-asignar]");
-      if (!b) return;
-      espId = b.dataset.asignar || null;
+      elegido = n.id;
+      abrirZonaRepintar();
+      return;
     }
-    const { error } = await sb.from("plano_zonas").upsert({ zona: z.id, espacio_id: espId, actualizado_en: new Date().toISOString() });
-    if (error) return tostada("Error: " + error.message);
-    const fila = E.zonasPlano.find((r) => r.zona === z.id);
-    if (fila) fila.espacio_id = espId; else E.zonasPlano.push({ zona: z.id, espacio_id: espId });
+    const b = e.target.closest("[data-asignar]");
+    if (b) { elegido = b.dataset.asignar || null; await guardar(); return; }
+    if (e.target.closest("[data-guardar-zona]")) await guardar();
+  };
+  const abrirZonaRepintar = () => {
+    const nombre = $("#zona-nombre").value;
+    abrirZona(zid, elegido);
+    $("#zona-nombre").value = nombre;
+  };
+  const guardar = async () => {
+    const nombre = $("#zona-nombre").value.trim() || z.nombre;
+    const zonas = E.zonas.map((x) => (x.id === z.id ? { ...x, nombre, espacio_id: elegido } : x));
+    try { await guardarZonas(zonas); } catch { return; }
     $("#dlg-zona").close();
     pintar();
-    tostada(espId ? `${z.nombre} → ${espPorId(espId)?.nombre}` : "Asignación quitada");
+    tostada(elegido ? `${nombre} → 📍 ${espPorId(elegido)?.nombre}` : `${nombre} guardada`);
   };
-  $("#dlg-zona").showModal();
+  if (!$("#dlg-zona").open) $("#dlg-zona").showModal();
 }
 
 function pintarArbol() {
@@ -1365,7 +1417,7 @@ function abrirAjustes() {
           <li>Si la tienda no deja leer los datos, escribe el nombre y el precio tú mismo en la ventana de añadir.</li>
           <li>Para actualizar un precio: abre el producto → <b>Poner precio a mano</b>, o vuelve a guardarlo con el marcador.</li>
           <li><b>Revisión automática:</b> cada día se revisan los precios de los productos pendientes. Las bajadas aparecen como <b>↓ X €</b>; usa el filtro <b>Solo bajadas</b> para verlas todas.</li>
-          <li><b>Plano:</b> es la pantalla de inicio. Toca una estancia para ver lo que habéis guardado para ella. Para decir qué espacio es cada estancia, pulsa <b>✎ Asignar estancias</b> y toca cada una.</li>
+          <li><b>Plano:</b> es la pantalla de inicio. Toca una zona para ver lo que habéis guardado para ella; si aún no tiene espacio, te pedirá cuál es. Con <b>✎ Editar plano</b> podéis mover los límites de las zonas, dibujar zonas nuevas, dividirlas, unirlas y cambiar su nombre y color.</li>
           <li><b>Espacios:</b> además de la categoría (qué es), cada producto puede tener uno o varios espacios (dónde irá: cocina, dormitorio…). En el lateral puedes combinarlos, por ejemplo «Sillas» + «Comedor». Si añades un producto con un espacio abierto, se le asigna automáticamente.</li>
           <li><b>Cambios en bloque:</b> pulsa <b>☑ Seleccionar</b>, arrastra el ratón con el botón pulsado para marcar varias de golpe (con Ctrl/⌘ se desmarcan), o mantén pulsada una tarjeta en el móvil, para cambiar categorías, espacios o estado de varios productos a la vez.</li>
           <li><b>Mismo producto en otra tienda:</b> al añadirlo, la app te preguntará si es el mismo; así se agrupan las ofertas y se marca la más barata.</li>
@@ -1566,30 +1618,34 @@ $("#titulo-vista").addEventListener("keydown", (e) => {
 $("#titulo-vista").addEventListener("focusout", (e) => { if (e.target.id === "titulo-cat") guardarNombreCategoria(e.target); });
 $$(".pestanas-vista button").forEach((b) => (b.onclick = () => { if (b.dataset.vista === "lista") { E.filtro.esp = ""; E.filtro.cat = "todas"; } cambiarVista(b.dataset.vista); }));
 $("#vista-plano").addEventListener("click", (e) => {
-  if (e.target.closest("#editar-plano")) { document.body.classList.add("editando-plano"); pintarPlano(); return; }
-  if (e.target.closest("#fin-editar-plano")) { document.body.classList.remove("editando-plano"); pintarPlano(); return; }
+  if (E.editor) return;
+  if (e.target.closest("#editar-plano")) { abrirEditorPlano(); return; }
   const fila = e.target.closest("[data-ir-esp]");
   if (fila) { irAEspacio(fila.dataset.irEsp); return; }
   const g = e.target.closest(".zona");
   if (!g) return;
-  const z = ZONAS.find((x) => x.id === g.dataset.zona);
+  const z = zonaPorId(g.dataset.zona);
   const esp = espacioDeZona(z);
-  if (!esp || document.body.classList.contains("editando-plano")) abrirZona(z.id);
+  if (!esp) abrirZona(z.id);
   else irAEspacio(esp.id);
 });
 // Girar el plano al cambiar entre pantalla ancha y estrecha
-matchMedia("(min-width: 900px)").addEventListener("change", () => { if (E.vista === "plano") pintarPlano(); });
+matchMedia("(min-width: 900px)").addEventListener("change", () => {
+  if (E.editor) { $("#vista-plano").classList.toggle("horizontal", esHorizontal()); E.editor.pintar(); }
+  else if (E.vista === "plano") pintarPlano();
+});
 $("#vista-plano").addEventListener("keydown", (e) => {
-  if ((e.key === "Enter" || e.key === " ") && e.target.closest(".zona")) { e.preventDefault(); e.target.closest(".zona").dispatchEvent(new MouseEvent("click", { bubbles: true })); }
+  if (!E.editor && (e.key === "Enter" || e.key === " ") && e.target.closest(".zona")) { e.preventDefault(); e.target.closest(".zona").dispatchEvent(new MouseEvent("click", { bubbles: true })); }
 });
 // Al pasar por una fila del resumen se resaltan sus estancias en el plano, y al revés
 $("#vista-plano").addEventListener("mouseover", (e) => {
+  if (E.editor) return;
   const fila = e.target.closest("[data-zonas]");
   const g = e.target.closest(".zona");
   $$("#vista-plano .zona.activa, #vista-plano .fila-espacio.resaltada").forEach((x) => x.classList.remove("activa", "resaltada"));
   if (fila) fila.dataset.zonas.split(" ").filter(Boolean).forEach((id) => $(`#vista-plano .zona[data-zona="${id}"]`)?.classList.add("activa"));
   if (g) {
-    const esp = espacioDeZona(ZONAS.find((x) => x.id === g.dataset.zona));
+    const esp = espacioDeZona(zonaPorId(g.dataset.zona));
     if (esp) $(`#vista-plano .fila-espacio[data-ir-esp="${esp.id}"]`)?.classList.add("resaltada");
   }
 });
@@ -1709,9 +1765,9 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape" && E.modoSe
 (() => {
   let ini = null, rect = null, base = null, arrastrando = false, ultimoEv = null, rafScroll = null;
   const zona = () => $(".principal");
-  const noEmpezar = (t) => t.closest("input, select, textarea, button, a, label, dialog, .barra-sel, .barra-filtros, .chips-vista");
+  const noEmpezar = (t) => t.closest("input, select, textarea, button, a, label, dialog, .barra-sel, .barra-filtros, .chips-vista, #vista-plano, .pestanas-vista");
   document.addEventListener("pointerdown", (e) => {
-    if (e.pointerType !== "mouse" || e.button !== 0 || $("dialog[open]")) return;
+    if (e.pointerType !== "mouse" || e.button !== 0 || $("dialog[open]") || E.vista === "plano" || E.editor) return;
     if (!zona()?.contains(e.target) || noEmpezar(e.target)) return;
     ini = { x: e.pageX, y: e.pageY };
     base = new Set(E.modoSel ? E.sel : []);

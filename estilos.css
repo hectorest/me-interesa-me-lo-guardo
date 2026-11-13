@@ -367,7 +367,6 @@ body.arrastrando, body.arrastrando * { user-select: none !important; -webkit-use
 .pestanas-vista button { border: 0; background: none; padding: 6px 12px; border-radius: 8px; cursor: pointer; font: inherit; font-size: 14px; color: var(--tinta-2); font-weight: 500; }
 .pestanas-vista button.activa { background: var(--papel); color: var(--tinta); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
 .aviso-editar { font-size: 13px; }
-body.editando-plano .plano .zona polygon { stroke: var(--acento); stroke-width: 3; stroke-dasharray: 8 6; }
 
 @media (max-width: 820px) {
   .vista-plano { grid-template-columns: 1fr; gap: 16px; }
@@ -388,3 +387,53 @@ body:not(.en-plano) #vista-plano { display: none; }
 .vista-plano.horizontal .resumen-espacios { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
 .vista-plano.horizontal .aviso-editar { grid-column: 1; }
 .vista-plano.horizontal .resumen-espacios { grid-column: 2; grid-row: 1 / span 2; }
+
+/* ---- Plano con zonas editables (sustituye estilos anteriores de zona) ---- */
+.plano .suelo polygon, .plano .suelo rect { fill: #fbf8f3; }
+.plano .zona polygon { fill: var(--color); fill-opacity: .8; stroke: none; transition: fill-opacity .15s; }
+.plano .zona.libre polygon { fill-opacity: .5; }
+.plano .zona:hover polygon, .plano .zona:focus-visible polygon, .plano .zona.activa polygon { fill: var(--color); fill-opacity: 1; }
+.plano .zona.activa polygon { stroke: var(--acento); stroke-width: 6; }
+.plano .etiqueta.libre .t-nombre { fill: var(--tinta-2); font-weight: 500; font-style: italic; }
+.plano .t-nombre { font-size: 34px; }
+.plano .t-sub { font-size: 19px; }
+body.editando-plano .plano .zona polygon { stroke: rgba(47, 42, 37, .25); stroke-width: 2; stroke-dasharray: 8 6; }
+body.editando-plano .plano .zona.seleccionada polygon { fill-opacity: 1; stroke: none; }
+.plano.editando { touch-action: none; user-select: none; -webkit-user-select: none; }
+.plano .contorno-sel { fill: none; stroke: var(--acento); pointer-events: none; }
+.plano .asa { fill: #fff; stroke: var(--acento); cursor: grab; }
+.plano .asa:hover { fill: var(--acento-suave); }
+.plano .asa.primero { fill: var(--acento); }
+.plano .asa-medio { fill: var(--acento); fill-opacity: .6; stroke: #fff; cursor: copy; }
+.plano .asa-medio:hover { fill-opacity: 1; }
+.plano .borrador { fill: none; stroke: var(--acento); stroke-dasharray: 10 6; pointer-events: none; }
+.plano .borrador.relleno { fill: rgba(210, 78, 36, .12); }
+.plano .borrador.corte { stroke: var(--rojo); }
+.plano .cursor-punto { fill: var(--acento); pointer-events: none; }
+.plano .edicion circle:not(.asa):not(.asa-medio) { pointer-events: none; }
+
+/* Panel del editor */
+.panel.editor { gap: 12px; }
+.editor-cab { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.editor-cab h2 { font-family: var(--serif); font-size: 26px; margin: 0; }
+.editor-barra { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.editor-barra .btn.activa { background: var(--tinta); color: #fff; border-color: var(--tinta); }
+.editor-barra .sep, .editor-pie .sep { flex: 1; }
+.ayuda-herr { margin: 0; padding: 10px 12px; background: #fff; border: 1px solid var(--linea); border-radius: 10px; }
+.editor-zona { display: grid; gap: 12px; padding: 14px; background: #fff; border: 1px solid var(--linea); border-radius: 12px; }
+.etiqueta-campo { display: block; font-size: 13px; font-weight: 500; color: var(--tinta-2); margin-bottom: 6px; }
+.muestras { display: flex; flex-wrap: wrap; gap: 6px; }
+.muestra { width: 30px; height: 30px; border-radius: 8px; border: 2px solid rgba(0,0,0,.08); cursor: pointer; padding: 0; }
+.muestra.on { border-color: var(--tinta); box-shadow: 0 0 0 2px #fff inset; }
+.fila-botones { display: flex; gap: 8px; flex-wrap: wrap; justify-content: space-between; }
+.lista-zonas { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+.fila-zona { display: flex; align-items: center; gap: 8px; text-align: left; padding: 8px 10px; border: 1px solid var(--linea); border-radius: 10px; background: var(--papel); cursor: pointer; font: inherit; font-size: 14px; color: var(--tinta); }
+.fila-zona:hover { border-color: var(--acento); }
+.fila-zona i { width: 14px; height: 14px; border-radius: 4px; flex: none; border: 1px solid rgba(0,0,0,.1); }
+.fila-zona small { color: var(--tinta-3); margin-left: auto; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.editor-pie { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; padding-top: 4px; }
+.vista-plano.horizontal .panel.editor { grid-template-columns: 1fr; }
+@media (max-width: 820px) {
+  .editor-barra .btn { font-size: 13px !important; padding: 6px 8px; }
+  .lista-zonas { grid-template-columns: 1fr 1fr; }
+}
