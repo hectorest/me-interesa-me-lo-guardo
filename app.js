@@ -870,8 +870,34 @@ function abrirAjustes() {
     <div>
       <div class="seccion-titulo">Cuenta</div>
       <p class="pequeno">Has entrado como ${esc(E.usuario?.email ?? "")}.</p>
+      <details style="margin-bottom:12px"><summary>Cambiar contraseña</summary>
+        <form id="form-cambiar-clave" style="display:grid;gap:10px;margin-top:10px">
+          <label>Contraseña actual<input type="password" name="actual" required autocomplete="current-password"></label>
+          <label>Nueva contraseña<input type="password" name="nueva" required minlength="6" autocomplete="new-password"></label>
+          <label>Repite la nueva contraseña<input type="password" name="repite" required minlength="6" autocomplete="new-password"></label>
+          <button class="btn primario" type="submit">Cambiar contraseña</button>
+          <p class="aviso" id="msg-cambiar-clave" hidden></p>
+        </form>
+      </details>
       <button class="btn" id="salir">Cerrar sesión</button>
     </div>`;
+  $("#form-cambiar-clave").onsubmit = async (e) => {
+    e.preventDefault();
+    const f = e.target, m = $("#msg-cambiar-clave"), btn = $("button[type=submit]", f);
+    const aviso = (txt, ok = false) => { m.hidden = false; m.className = "aviso" + (ok ? " ok" : ""); m.textContent = txt; };
+    if (f.nueva.value !== f.repite.value) return aviso("Las dos contraseñas nuevas no coinciden.");
+    if (f.nueva.value === f.actual.value) return aviso("La nueva contraseña es igual que la actual.");
+    btn.disabled = true;
+    try {
+      // Comprobamos la contraseña actual antes de cambiarla
+      const { error: e1 } = await sb.auth.signInWithPassword({ email: E.usuario.email, password: f.actual.value });
+      if (e1) return aviso("La contraseña actual no es correcta.");
+      const { error: e2 } = await sb.auth.updateUser({ password: f.nueva.value });
+      if (e2) return aviso("No se pudo cambiar: " + e2.message);
+      f.reset();
+      aviso("Contraseña cambiada ✓", true);
+    } finally { btn.disabled = false; }
+  };
   $("#salir").onclick = async () => { await sb.auth.signOut(); location.reload(); };
   $("#copiar-marcador").onclick = async () => {
     try { await navigator.clipboard.writeText(enlaceMarcador(APP_URL)); tostada("Código copiado"); }
