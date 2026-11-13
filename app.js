@@ -872,7 +872,8 @@ function abrirAjustes() {
       <p class="pequeno">Has entrado como ${esc(E.usuario?.email ?? "")}.</p>
       <details style="margin-bottom:12px"><summary>Cambiar contraseña</summary>
         <form id="form-cambiar-clave" style="display:grid;gap:10px;margin-top:10px">
-          <label>Contraseña actual<input type="password" name="actual" required autocomplete="current-password"></label>
+          <label data-actual>Contraseña actual<input type="password" name="actual" required autocomplete="current-password"></label>
+          <label class="interruptor"><input type="checkbox" name="olvidada"> No recuerdo la contraseña actual</label>
           <label>Nueva contraseña<input type="password" name="nueva" required minlength="6" autocomplete="new-password"></label>
           <label>Repite la nueva contraseña<input type="password" name="repite" required minlength="6" autocomplete="new-password"></label>
           <button class="btn primario" type="submit">Cambiar contraseña</button>
@@ -881,17 +882,25 @@ function abrirAjustes() {
       </details>
       <button class="btn" id="salir">Cerrar sesión</button>
     </div>`;
+  $("#form-cambiar-clave").olvidada.onchange = (e) => {
+    const f = e.target.form;
+    $("[data-actual]", f).hidden = e.target.checked;
+    f.actual.required = !e.target.checked;
+  };
   $("#form-cambiar-clave").onsubmit = async (e) => {
     e.preventDefault();
     const f = e.target, m = $("#msg-cambiar-clave"), btn = $("button[type=submit]", f);
     const aviso = (txt, ok = false) => { m.hidden = false; m.className = "aviso" + (ok ? " ok" : ""); m.textContent = txt; };
     if (f.nueva.value !== f.repite.value) return aviso("Las dos contraseñas nuevas no coinciden.");
-    if (f.nueva.value === f.actual.value) return aviso("La nueva contraseña es igual que la actual.");
+    const sinActual = f.olvidada.checked;
+    if (!sinActual && f.nueva.value === f.actual.value) return aviso("La nueva contraseña es igual que la actual.");
     btn.disabled = true;
     try {
-      // Comprobamos la contraseña actual antes de cambiarla
-      const { error: e1 } = await sb.auth.signInWithPassword({ email: E.usuario.email, password: f.actual.value });
-      if (e1) return aviso("La contraseña actual no es correcta.");
+      // Si la recuerda, la comprobamos antes de cambiarla; si no, basta con la sesión iniciada
+      if (!sinActual) {
+        const { error: e1 } = await sb.auth.signInWithPassword({ email: E.usuario.email, password: f.actual.value });
+        if (e1) return aviso("La contraseña actual no es correcta. Si no la recuerdas, marca «No recuerdo la contraseña actual».");
+      }
       const { error: e2 } = await sb.auth.updateUser({ password: f.nueva.value });
       if (e2) return aviso("No se pudo cambiar: " + e2.message);
       f.reset();
