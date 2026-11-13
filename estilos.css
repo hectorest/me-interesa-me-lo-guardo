@@ -192,7 +192,8 @@ label { display: grid; gap: 6px; font-size: 13px; font-weight: 500; color: var(-
   .lateral.abierta { transform: none; }
   .velo { display: block; position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 30; }
   .principal { padding: 14px 12px 60px; }
-  .barra-filtros h2 { font-size: 22px; flex-basis: 100%; }
+  .barra-filtros h2 { font-size: 22px; }
+  .cabecera-vista { flex-basis: 100%; }
   .filtros { margin-left: 0; }
   .rejilla { grid-template-columns: repeat(auto-fill, minmax(155px, 1fr)); gap: 10px; }
   .fila-cat { flex-wrap: wrap; }
@@ -226,3 +227,26 @@ label { display: grid; gap: 6px; font-size: 13px; font-weight: 500; color: var(-
 .paso[open] summary::after { content: "▾"; }
 .paso[open] { padding-bottom: 12px; }
 .codigo { display: inline-block; margin: 4px 0; padding: 4px 8px; background: #f3ede3; border-radius: 6px; font-size: 12px; word-break: break-all; }
+
+/* Título de categoría editable (como el título de un documento) */
+.cabecera-vista { display: grid; gap: 2px; min-width: 0; max-width: 100%; }
+.ruta-padre { font-size: 13px; color: var(--tinta-3); }
+.ruta-padre a { color: var(--tinta-2); text-decoration: none; }
+.ruta-padre a:hover { text-decoration: underline; }
+#titulo-vista { position: relative; min-width: 0; }
+.titulo-envoltura { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; }
+.titulo-editable {
+  font: inherit; letter-spacing: inherit; color: inherit; background: transparent;
+  border: 1px solid transparent; border-radius: 8px; padding: 0 7px; margin-left: -8px;
+  max-width: 100%; min-width: 2ch; cursor: text; transition: border-color .15s, background .15s, box-shadow .15s;
+}
+.titulo-editable:hover { border-color: #d6cbbb; }
+.titulo-editable:focus { border-color: var(--acento); background: var(--papel); box-shadow: 0 0 0 3px var(--acento-suave); outline: none; }
+.titulo-envoltura .lapiz { font-size: 16px; color: var(--tinta-3); opacity: 0; transition: opacity .15s; pointer-events: none; }
+.titulo-envoltura:hover .lapiz { opacity: 1; }
+.titulo-editable:focus + .lapiz { opacity: 0; }
+.medidor { position: absolute; visibility: hidden; white-space: pre; left: 0; top: 0; font: inherit; letter-spacing: inherit; padding: 0; }
+@media (hover: none) { .titulo-envoltura .lapiz { opacity: .6; } }
+/* El título editable conserva su tamaño grande también en el móvil (≥16px, así iOS no hace zoom) */
+.barra-filtros .titulo-editable { font-size: inherit !important; }
+.titulo-envoltura:focus-within .lapiz { opacity: 0 !important; }

@@ -269,7 +269,7 @@ function pintarRejilla() {
   }[f.orden];
   lista = lista.sort(ord);
 
-  $("#titulo-vista").textContent = f.cat === "todas" ? "Todo" : f.cat === "sin" ? "Sin categoría" : ruta(f.cat);
+  pintarTitulo();
   $("#rejilla").innerHTML = lista.map(tarjeta).join("");
   const vacio = $("#vacio");
   if (!lista.length) {
@@ -278,6 +278,55 @@ function pintarRejilla() {
       ? `<h3>Nada por aquí</h3><p>No hay productos con estos filtros.</p>`
       : `<h3>Vuestra lista está vacía</h3><p>Pega el enlace de algo que os interese y empezad a guardar ofertas.</p><p><button class="btn primario" data-accion="anadir">+ Añadir la primera</button></p><p><a href="#" data-accion="ayuda">Ver formas rápidas de guardar</a></p>`;
   } else vacio.hidden = true;
+}
+
+// Título de la vista: si es una categoría, su nombre se edita ahí mismo (como el título de un documento)
+function pintarTitulo() {
+  const f = E.filtro, h2 = $("#titulo-vista"), rp = $("#ruta-padre");
+  const enEdicion = $("#titulo-cat");
+  if (enEdicion && document.activeElement === enEdicion && enEdicion.dataset.cat === f.cat) return;
+  const c = f.cat !== "todas" && f.cat !== "sin" ? catPorId(f.cat) : null;
+  if (!c) {
+    rp.hidden = true;
+    h2.textContent = f.cat === "sin" ? "Sin categoría" : "Todo";
+    return;
+  }
+  // Ruta de categorías padre, pulsables
+  const padres = [];
+  let p = catPorId(c.padre_id), guard = 0;
+  while (p && guard++ < 20) { padres.unshift(p); p = catPorId(p.padre_id); }
+  rp.hidden = !padres.length;
+  rp.innerHTML = padres.map((x) => `<a href="#" data-ir-cat="${x.id}">${esc(x.nombre)}</a>`).join(" › ") + (padres.length ? " ›" : "");
+  h2.innerHTML = `<span class="titulo-envoltura"><input class="titulo-editable" id="titulo-cat" data-cat="${c.id}" value="${esc(c.nombre)}" spellcheck="false" autocomplete="off" aria-label="Nombre de la categoría" title="Haz clic para cambiar el nombre"><span class="lapiz" aria-hidden="true">✎</span></span><span class="medidor" aria-hidden="true"></span>`;
+  ajustarAnchoTitulo();
+}
+function ajustarAnchoTitulo() {
+  const i = $("#titulo-cat"), m = $("#titulo-vista .medidor");
+  if (!i || !m) return;
+  m.textContent = i.value || i.placeholder || " ";
+  i.style.width = Math.ceil(m.getBoundingClientRect().width) + 16 + "px";
+}
+async function guardarNombreCategoria(input) {
+  const c = catPorId(input.dataset.cat);
+  if (!c) return;
+  const nombre = input.value.replace(/\s+/g, " ").trim();
+  if (!nombre || nombre === c.nombre) { input.value = c.nombre; ajustarAnchoTitulo(); return; }
+  const repetida = E.cats.find((x) => x.id !== c.id && (x.padre_id ?? null) === (c.padre_id ?? null) && norm(x.nombre) === norm(nombre));
+  if (repetida) {
+    tostada(`Ya hay una categoría «${repetida.nombre}» en ese mismo nivel`);
+    input.value = c.nombre; ajustarAnchoTitulo(); return;
+  }
+  const anterior = c.nombre;
+  c.nombre = nombre; // optimista
+  pintarArbol();
+  const { error } = await sb.from("categorias").update({ nombre }).eq("id", c.id);
+  if (error) {
+    c.nombre = anterior; tostada("No se pudo renombrar: " + error.message);
+    pintar(); return;
+  }
+  tostada("Categoría renombrada ✓");
+  pintarArbol();
+  pintarRejilla();
 }
 
 function tarjeta(p) {
@@ -1104,6 +1153,23 @@ $("#f-estado").onchange = (e) => { E.filtro.estado = e.target.value; pintar(); }
 $("#f-tienda").onchange = (e) => { E.filtro.tienda = e.target.value; pintar(); };
 $("#f-orden").onchange = (e) => { E.filtro.orden = e.target.value; pintarRejilla(); };
 $("#f-bajadas").onchange = (e) => { E.filtro.bajadas = e.target.checked; pintar(); };
+
+// Edición del nombre de la categoría desde el título
+$("#titulo-vista").addEventListener("input", (e) => { if (e.target.id === "titulo-cat") ajustarAnchoTitulo(); });
+$("#titulo-vista").addEventListener("keydown", (e) => {
+  if (e.target.id !== "titulo-cat") return;
+  if (e.key === "Enter") { e.preventDefault(); e.target.blur(); }
+  if (e.key === "Escape") { e.target.value = catPorId(e.target.dataset.cat)?.nombre ?? e.target.value; ajustarAnchoTitulo(); e.target.blur(); }
+});
+$("#titulo-vista").addEventListener("focusout", (e) => { if (e.target.id === "titulo-cat") guardarNombreCategoria(e.target); });
+$("#ruta-padre").addEventListener("click", (e) => {
+  const a = e.target.closest("[data-ir-cat]");
+  if (!a) return;
+  e.preventDefault();
+  E.filtro.cat = a.dataset.irCat;
+  pintar();
+});
+window.addEventListener("resize", ajustarAnchoTitulo);
 
 $("#arbol-cats").addEventListener("click", (e) => {
   const fl = e.target.closest("[data-alternar]");
