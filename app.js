@@ -239,7 +239,47 @@ async function cargar() {
   E.ultimaCarga = Date.now();
   if (E.filtro.cat !== "todas" && E.filtro.cat !== "sin" && !catPorId(E.filtro.cat)) E.filtro.cat = "todas";
   if (E.filtro.esp && E.filtro.esp !== "sin" && !espPorId(E.filtro.esp)) E.filtro.esp = "";
+  if (!z.error) await normalizarZonas();
   pintar();
+}
+
+// Espacios y zonas del plano son lo mismo: cada zona del plano es un espacio.
+// Esto deja los datos coherentes: toda zona tiene su espacio (se crea si falta),
+// un espacio tiene como mucho una zona (si hay varias se juntan) y el nombre es el del espacio.
+async function normalizarZonas() {
+  if (E.normalizando) return;
+  E.normalizando = true;
+  try {
+    let cambios = false;
+    const zonas = E.zonas.map((z) => ({ ...z, poligonos: z.poligonos.map((p) => p.map((q) => [...q])) }));
+    for (const z of zonas) {
+      if (z.espacio_id && espPorId(z.espacio_id)) continue;
+      let e = E.esps.find((x) => norm(x.nombre) === norm(z.nombre) && !zonas.some((o) => o !== z && o.espacio_id === x.id));
+      if (!e) {
+        const { data, error } = await sb.from("espacios").insert({ nombre: z.nombre, orden: E.esps.length + 1 }).select().single();
+        if (error) return;
+        E.esps.push(data);
+        e = data;
+      }
+      z.espacio_id = e.id;
+      cambios = true;
+    }
+    const porEsp = new Map(), finales = [];
+    for (const z of zonas) {
+      const prev = porEsp.get(z.espacio_id);
+      if (prev) { prev.poligonos.push(...z.poligonos); cambios = true; }
+      else { porEsp.set(z.espacio_id, z); finales.push(z); }
+    }
+    for (const z of finales) {
+      const e = espPorId(z.espacio_id);
+      if (z.nombre !== e.nombre) { z.nombre = e.nombre; cambios = true; }
+    }
+    if (cambios) await guardarZonas(finales);
+  } catch (err) {
+    console.warn("No se pudo ordenar el plano", err);
+  } finally {
+    E.normalizando = false;
+  }
 }
 
 // ---------------- Pintado ----------------
@@ -297,9 +337,9 @@ function infoZona(z) {
   const e = espacioDeZona(z);
   const base = filtrados({ ignorarEsp: true, ignorarCat: true });
   return {
-    titulo: z.nombre,
-    subtitulo: e ? (norm(e.nombre) === norm(z.nombre) ? "" : "📍 " + e.nombre) : E.editor ? "" : "Toca para asignar",
-    asignada: !!e,
+    titulo: E.editor ? z.nombre : e?.nombre ?? z.nombre,
+    subtitulo: "",
+    asignada: true,
     n: e ? base.filter((p) => p.esps.includes(e.id)).length : 0,
   };
 }
@@ -320,7 +360,7 @@ function pintarPlano() {
     const zs = enPlano.get(e.id) || [];
     return `<button class="fila-espacio ${zs.length ? "" : "fuera"}" data-ir-esp="${e.id}" data-zonas="${zs.map((z) => esc(z.id)).join(" ")}">
       <b>📍 ${esc(e.nombre)}</b><span class="n">${prods.length} ${prods.length === 1 ? "cosa" : "cosas"}</span>
-      <small>${zs.length ? "En el plano: " + zs.map((z) => esc(z.nombre)).join(", ") : "No está en el plano"}${prods.length ? ` · ${euros(sumaDe(prods))}` : ""}</small>
+      <small>${zs.length ? "En el plano" : "Sin dibujar en el plano"}${prods.length ? ` · ${euros(sumaDe(prods))}` : ""}</small>
     </button>`;
   }).join("");
   const sinEsp = base.filter((p) => !p.esps.length);
@@ -332,7 +372,7 @@ function pintarPlano() {
         <h2>Vuestra casa</h2>
         <p class="pequeno" style="margin:4px 0 0">${total} ${E.filtro.estado === "pendiente" ? "productos pendientes" : "productos"}${total ? ` · ${euros(sumaDe(base))} si compráis la opción más barata de cada uno` : ""}</p>
       </div>
-      <p class="pequeno aviso-editar">Toca una zona para ver lo que habéis guardado para ella. <button class="btn mini" id="editar-plano">✎ Editar plano</button></p>
+      <p class="pequeno aviso-editar">Toca un espacio del plano para ver lo que habéis guardado para él. <button class="btn mini" id="editar-plano">✎ Editar plano</button></p>
       <div class="resumen-espacios">${filas}
         ${sinEsp.length ? `<button class="fila-espacio fuera" data-ir-esp="sin"><b>∅ Sin espacio</b><span class="n">${sinEsp.length} ${sinEsp.length === 1 ? "cosa" : "cosas"}</span><small>Productos a los que aún no habéis puesto espacio</small></button>` : ""}
       </div>
@@ -340,7 +380,7 @@ function pintarPlano() {
 }
 
 // ---------------- Editor del plano ----------------
-function abrirEditorPlano(selInicial = null) {
+function abrirEditorPlano(selInicial = null, colocarEsp = null) {
   if (E.vista !== "plano") cambiarVista("plano");
   const cont = $("#vista-plano");
   cont.classList.toggle("horizontal", esHorizontal());
@@ -349,6 +389,7 @@ function abrirEditorPlano(selInicial = null) {
   E.editor = new EditorPlano({
     zonas: E.zonas,
     selInicial,
+    colocarInicial: colocarEsp,
     svgDe,
     esc,
     espacios: () => E.esps,
@@ -356,8 +397,8 @@ function abrirEditorPlano(selInicial = null) {
     tostada,
     zonasOriginales: zonasPorDefecto,
     alCancelar: () => { E.editor = null; document.body.classList.remove("editando-plano"); pintar(); },
-    alGuardar: async (zonas) => {
-      await guardarZonas(zonas);
+    alGuardar: async (zonas, fusiones) => {
+      await guardarPlanoEditado(zonas, fusiones);
       E.editor = null;
       document.body.classList.remove("editando-plano");
       pintar();
@@ -365,6 +406,39 @@ function abrirEditorPlano(selInicial = null) {
     },
   });
   E.editor.montar($(".lienzo", cont), $(".panel", cont));
+}
+// Guardar el editor: crea los espacios nuevos, renombra los cambiados, junta los unidos y guarda las formas
+async function guardarPlanoEditado(zonas, fusiones = []) {
+  for (const z of zonas) {
+    const nombre = z.nombre.trim() || "Espacio";
+    const e = espPorId(z.espacio_id);
+    if (!e) {
+      const { data, error } = await sb.from("espacios").insert({ nombre, orden: E.esps.length + 1 }).select().single();
+      if (error) { tostada("No se pudo crear el espacio: " + error.message, 6000); throw error; }
+      E.esps.push(data);
+      z.espacio_id = data.id;
+    } else if (e.nombre !== nombre) {
+      const { error } = await sb.from("espacios").update({ nombre }).eq("id", e.id);
+      if (error) { tostada("No se pudo renombrar: " + error.message, 6000); throw error; }
+      e.nombre = nombre;
+    }
+    z.nombre = nombre;
+  }
+  // Uniones: los productos del espacio absorbido pasan al otro y el absorbido se elimina
+  for (const { a, b } of fusiones) {
+    const destino = zonas.find((z) => z.espacio_id === a || z.espacio_id === b)?.espacio_id ?? a;
+    const origen = destino === a ? b : a;
+    if (!espPorId(origen) || origen === destino) continue;
+    const ids = E.prods.filter((p) => p.esps.includes(origen)).map((p) => p.id);
+    if (ids.length) {
+      const { error } = await sb.from("producto_espacios").upsert(ids.map((p) => ({ producto_id: p, espacio_id: destino })), { ignoreDuplicates: true });
+      if (error) { tostada("Error al unir: " + error.message, 6000); throw error; }
+    }
+    await sb.from("plano_zonas").delete().eq("espacio_id", origen);
+    await sb.from("espacios").delete().eq("id", origen);
+  }
+  await guardarZonas(zonas);
+  await cargar();
 }
 async function guardarZonas(zonas) {
   const ahora = new Date().toISOString();
@@ -377,53 +451,6 @@ async function guardarZonas(zonas) {
     if (e2) { tostada("No se pudieron borrar zonas: " + e2.message, 6000); throw e2; }
   }
   E.zonas = zonas.map((z, i) => ({ ...z, orden: i + 1 }));
-}
-
-// Toque en una zona sin espacio (fuera del editor): elegir espacio o cambiar nombre
-function abrirZona(zid, elegidoIni) {
-  const z = zonaPorId(zid);
-  let elegido = elegidoIni !== undefined ? elegidoIni : z.espacio_id || null;
-  const actual = espPorId(elegido) ?? null;
-  $("#zona-titulo").textContent = z.nombre;
-  $("#zona-cuerpo").innerHTML = `
-    <label>Nombre de la zona<input type="text" id="zona-nombre" value="${esc(z.nombre)}" maxlength="40"></label>
-    <p class="pequeno" style="margin:0">¿Qué espacio de la app es? Sus productos aparecerán al tocar la zona.</p>
-    <div class="chips chips-esp">
-      ${E.esps.map((e) => `<button type="button" class="chip-esp ${actual?.id === e.id ? "on" : ""}" data-asignar="${e.id}">📍 ${esc(e.nombre)}</button>`).join("")}
-      <button type="button" class="chip-esp nuevo" data-asignar-nuevo>＋ Nuevo espacio…</button>
-    </div>
-    <div class="pie-dlg">
-      <button type="button" class="btn" data-editar-forma>✎ Cambiar forma o color</button>
-      ${actual ? `<button type="button" class="btn" data-asignar="">Quitar espacio</button>` : ""}
-      <button type="button" class="btn primario" data-guardar-zona>Guardar</button>
-    </div>`;
-  $("#zona-cuerpo").onclick = async (e) => {
-    if (e.target.closest("[data-editar-forma]")) { $("#dlg-zona").close(); abrirEditorPlano(z.id); return; }
-    if (e.target.closest("[data-asignar-nuevo]")) {
-      const n = await crearEspacio();
-      if (!n) return;
-      elegido = n.id;
-      abrirZonaRepintar();
-      return;
-    }
-    const b = e.target.closest("[data-asignar]");
-    if (b) { elegido = b.dataset.asignar || null; await guardar(); return; }
-    if (e.target.closest("[data-guardar-zona]")) await guardar();
-  };
-  const abrirZonaRepintar = () => {
-    const nombre = $("#zona-nombre").value;
-    abrirZona(zid, elegido);
-    $("#zona-nombre").value = nombre;
-  };
-  const guardar = async () => {
-    const nombre = $("#zona-nombre").value.trim() || z.nombre;
-    const zonas = E.zonas.map((x) => (x.id === z.id ? { ...x, nombre, espacio_id: elegido } : x));
-    try { await guardarZonas(zonas); } catch { return; }
-    $("#dlg-zona").close();
-    pintar();
-    tostada(elegido ? `${nombre} → 📍 ${espPorId(elegido)?.nombre}` : `${nombre} guardada`);
-  };
-  if (!$("#dlg-zona").open) $("#dlg-zona").showModal();
 }
 
 function pintarArbol() {
@@ -574,7 +601,7 @@ function pintarTitulo() {
   if (!c) {
     if (es && f.cat === "todas") {
       rp.hidden = false;
-      rp.innerHTML = `<a href="#" data-volver-plano>← Plano</a> · Espacio`;
+      rp.innerHTML = `<a href="#" data-volver-plano>← Plano</a> · Espacio${E.zonas.some((z) => z.espacio_id === es.id) ? "" : ` · <a href="#" data-dibujar-esp="${es.id}">dibujarlo en el plano</a>`}`;
       h2.innerHTML = editable("esp", es.id, es.nombre);
       ajustarAnchoTitulo();
       return;
@@ -1303,7 +1330,9 @@ async function borrarEspacio(id) {
   const s = espPorId(id);
   if (!s) return false;
   const n = E.prods.filter((p) => p.esps.includes(s.id)).length;
-  if (!confirm(`¿Eliminar el espacio «${s.nombre}»?${n ? ` ${n} producto(s) dejarán de estar en él (no se borran).` : ""}`)) return false;
+  const enPlano = E.zonas.some((z) => z.espacio_id === s.id);
+  if (!confirm(`¿Eliminar el espacio «${s.nombre}»?${n ? ` ${n} producto(s) dejarán de estar en él (no se borran).` : ""}${enPlano ? " También desaparecerá del plano." : ""}`)) return false;
+  await sb.from("plano_zonas").delete().eq("espacio_id", s.id);
   const { error } = await sb.from("espacios").delete().eq("id", s.id);
   if (error) { tostada("No se pudo eliminar: " + error.message); return false; }
   if (E.filtro.esp === s.id) E.filtro.esp = "";
@@ -1417,7 +1446,7 @@ function abrirAjustes() {
           <li>Si la tienda no deja leer los datos, escribe el nombre y el precio tú mismo en la ventana de añadir.</li>
           <li>Para actualizar un precio: abre el producto → <b>Poner precio a mano</b>, o vuelve a guardarlo con el marcador.</li>
           <li><b>Revisión automática:</b> cada día se revisan los precios de los productos pendientes. Las bajadas aparecen como <b>↓ X €</b>; usa el filtro <b>Solo bajadas</b> para verlas todas.</li>
-          <li><b>Plano:</b> es la pantalla de inicio. Toca una zona para ver lo que habéis guardado para ella; si aún no tiene espacio, te pedirá cuál es. Con <b>✎ Editar plano</b> podéis mover los límites de las zonas, dibujar zonas nuevas, dividirlas, unirlas y cambiar su nombre y color.</li>
+          <li><b>Plano:</b> es la pantalla de inicio. Cada espacio de la casa (cocina, dormitorio…) es una zona del plano: tócala para ver lo que habéis guardado para ella. Con <b>✎ Editar plano</b> podéis mover sus límites, dibujar espacios nuevos, dividirlos, unirlos y cambiarles el nombre y el color. Los espacios que aún no estén dibujados se pueden colocar desde el editor.</li>
           <li><b>Espacios:</b> además de la categoría (qué es), cada producto puede tener uno o varios espacios (dónde irá: cocina, dormitorio…). En el lateral puedes combinarlos, por ejemplo «Sillas» + «Comedor». Si añades un producto con un espacio abierto, se le asigna automáticamente.</li>
           <li><b>Cambios en bloque:</b> pulsa <b>☑ Seleccionar</b>, arrastra el ratón con el botón pulsado para marcar varias de golpe (con Ctrl/⌘ se desmarcan), o mantén pulsada una tarjeta en el móvil, para cambiar categorías, espacios o estado de varios productos a la vez.</li>
           <li><b>Mismo producto en otra tienda:</b> al añadirlo, la app te preguntará si es el mismo; así se agrupan las ofertas y se marca la más barata.</li>
@@ -1624,10 +1653,8 @@ $("#vista-plano").addEventListener("click", (e) => {
   if (fila) { irAEspacio(fila.dataset.irEsp); return; }
   const g = e.target.closest(".zona");
   if (!g) return;
-  const z = zonaPorId(g.dataset.zona);
-  const esp = espacioDeZona(z);
-  if (!esp) abrirZona(z.id);
-  else irAEspacio(esp.id);
+  const esp = espacioDeZona(zonaPorId(g.dataset.zona));
+  if (esp) irAEspacio(esp.id);
 });
 // Girar el plano al cambiar entre pantalla ancha y estrecha
 matchMedia("(min-width: 900px)").addEventListener("change", () => {
@@ -1668,6 +1695,8 @@ $("#lista-espacios").addEventListener("click", async (e) => {
   window.scrollTo({ top: 0, behavior: "smooth" });
 });
 $("#ruta-padre").addEventListener("click", (e) => {
+  const dib = e.target.closest("[data-dibujar-esp]");
+  if (dib) { e.preventDefault(); E.filtro.esp = ""; cambiarVista("plano"); abrirEditorPlano(null, dib.dataset.dibujarEsp); return; }
   if (e.target.closest("[data-volver-plano]")) { e.preventDefault(); E.filtro.esp = ""; E.filtro.cat = "todas"; cambiarVista("plano"); return; }
   if (e.target.closest("[data-quitar-esp]")) { e.preventDefault(); E.filtro.esp = ""; pintar(); return; }
   const a = e.target.closest("[data-ir-cat]");

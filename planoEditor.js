@@ -1,12 +1,12 @@
-// Editor de zonas del plano: mover límites, dibujar, dividir, unir, nombre, color y espacio.
+// Editor del plano. Cada zona es un espacio de la app: mover límites, dibujar, dividir, unir, nombre y color.
 import { COLORES, SUELO, puntoEnPoligono, dividirPoligono } from "./plano.js";
 
 const AYUDA = {
   mover: "Toca una zona para elegirla. Arrastra sus <b>puntos</b> para mover los límites, o un <b>punto pequeño</b> de un borde para añadir una esquina. Para <b>quitar una esquina</b>, tócala y pulsa «Quitar esquina» (o doble clic sobre ella, o la tecla Supr). Arrastrando la zona elegida la mueves entera.",
-  rect: "Arrastra sobre el plano para dibujar una zona rectangular.",
-  poligono: "Toca para poner cada esquina. Toca el <b>primer punto</b> (o pulsa Intro) para cerrar la zona. Esc cancela.",
-  dividir: "Traza una línea que cruce de lado a lado la zona que quieres partir: toca donde empieza y donde acaba (o arrastra). Quedan dos zonas.",
-  unir: "Elige una zona y después toca la zona que quieres unirle. Quedarán como una sola.",
+  rect: "Arrastra sobre el plano para dibujar un espacio rectangular.",
+  poligono: "Toca para poner cada esquina. Toca el <b>primer punto</b> (o pulsa Intro) para cerrar. Esc cancela.",
+  dividir: "Traza una línea que cruce de lado a lado el espacio que quieres partir: toca donde empieza y donde acaba (o arrastra). Quedan dos espacios; los productos se quedan en el original.",
+  unir: "Elige un espacio y después toca el que quieres unirle. Quedarán como uno solo y sus productos se juntan.",
 };
 
 const copiar = (x) => JSON.parse(JSON.stringify(x));
@@ -29,6 +29,9 @@ export class EditorPlano {
     this.hist = [];
     this.fut = [];
     this.cambiado = false;
+    this.fusiones = []; // espacios unidos: { a, b }
+    this.colocar = op.colocarInicial ? op.espacios().find((e) => e.id === op.colocarInicial) ?? null : null;
+    if (this.colocar) this.herramienta = "rect";
   }
 
   montar(lienzo, panel) {
@@ -97,24 +100,26 @@ export class EditorPlano {
     for (let i = this.zonas.length - 1; i >= 0; i--) if (this.zonas[i].poligonos.some((p) => puntoEnPoligono(pt, p))) return this.zonas[i];
     return null;
   }
+  instantanea() { return JSON.stringify({ zonas: this.zonas, fusiones: this.fusiones }); }
+  restaurar(t) { const o = JSON.parse(t); this.zonas = o.zonas; this.fusiones = o.fusiones; }
   guardarHistoria() {
-    this.hist.push(JSON.stringify(this.zonas));
+    this.hist.push(this.instantanea());
     if (this.hist.length > 60) this.hist.shift();
     this.fut = [];
     this.cambiado = true;
   }
   deshacer() {
     if (!this.hist.length) return;
-    this.fut.push(JSON.stringify(this.zonas));
-    this.zonas = JSON.parse(this.hist.pop());
+    this.fut.push(this.instantanea());
+    this.restaurar(this.hist.pop());
     if (!this.zona()) this.sel = null;
     this.vsel = null;
     this.pintar(); this.pintarPanel();
   }
   rehacer() {
     if (!this.fut.length) return;
-    this.hist.push(JSON.stringify(this.zonas));
-    this.zonas = JSON.parse(this.fut.pop());
+    this.hist.push(this.instantanea());
+    this.restaurar(this.fut.pop());
     if (!this.zona()) this.sel = null;
     this.vsel = null;
     this.pintar(); this.pintarPanel();
@@ -129,14 +134,20 @@ export class EditorPlano {
     while (this.zonas.some((z) => z.nombre === nombre)) nombre = `${base} (${++n})`;
     return nombre;
   }
+  // Espacios que existen en la app pero aún no están dibujados en el plano
+  sinDibujar() {
+    return this.op.espacios().filter((e) => !this.zonas.some((z) => z.espacio_id === e.id) && !this.fusiones.some((f) => f.b === e.id));
+  }
   crearZona(poligono) {
     this.guardarHistoria();
-    const z = { id: nuevoId(), nombre: this.nombreLibre(), color: this.colorLibre(), espacio_id: null, poligonos: [poligono], orden: this.zonas.length + 1 };
+    const c = this.colocar;
+    this.colocar = null;
+    const z = { id: nuevoId(), nombre: c ? c.nombre : this.nombreLibre("Espacio nuevo"), color: this.colorLibre(), espacio_id: c?.id ?? null, poligonos: [poligono], orden: this.zonas.length + 1 };
     this.zonas.push(z);
     this.sel = z.id;
     this.herramienta = "mover";
     this.pintar(); this.pintarPanel();
-    setTimeout(() => { const i = this.panel.querySelector("[data-campo=nombre]"); i?.focus(); i?.select(); }, 30);
+    if (!c) setTimeout(() => { const i = this.panel.querySelector("[data-campo=nombre]"); i?.focus(); i?.select(); }, 30);
   }
   cambiarHerramienta(h) {
     this.herramienta = h;
@@ -296,9 +307,11 @@ export class EditorPlano {
   }
   unir(idA, idB) {
     const za = this.zona(idA), zb = this.zona(idB);
+    if (za.espacio_id && zb.espacio_id && !confirm(`¿Unir «${zb.nombre}» a «${za.nombre}»? Quedará un solo espacio, «${za.nombre}», con los productos de los dos. (Se aplica al guardar.)`)) return;
     this.guardarHistoria();
     za.poligonos.push(...zb.poligonos);
-    if (!za.espacio_id) za.espacio_id = zb.espacio_id;
+    if (za.espacio_id && zb.espacio_id) this.fusiones.push({ a: za.espacio_id, b: zb.espacio_id });
+    else if (!za.espacio_id) za.espacio_id = zb.espacio_id;
     this.zonas = this.zonas.filter((z) => z.id !== idB);
     this.sel = za.id;
     this.herramienta = "mover";
@@ -317,38 +330,33 @@ export class EditorPlano {
   pintarPanel() {
     const esc = this.op.esc, z = this.zona();
     const herr = [["mover", "🖐", "Seleccionar"], ["rect", "▭", "Rectángulo"], ["poligono", "⬠", "Polígono"], ["dividir", "✂", "Dividir"], ["unir", "⊕", "Unir"]];
-    const espacios = this.op.espacios();
     this.panel.innerHTML = `
-      <div class="editor-cab"><h2>Editar plano</h2><span class="pequeno">${this.zonas.length} zonas</span></div>
+      <div class="editor-cab"><h2>Editar plano</h2><span class="pequeno">${this.zonas.length} espacios dibujados</span></div>
       <div class="editor-barra" role="toolbar">
         ${herr.map(([id, ico, txt]) => `<button type="button" class="btn mini ${this.herramienta === id ? "activa" : ""}" data-herr="${id}" title="${txt}">${ico} ${txt}</button>`).join("")}
         <span class="sep"></span>
         <button type="button" class="btn mini" data-acc="deshacer" ${this.hist.length ? "" : "disabled"} title="Deshacer (Ctrl+Z)">↶</button>
         <button type="button" class="btn mini" data-acc="rehacer" ${this.fut.length ? "" : "disabled"} title="Rehacer">↷</button>
       </div>
-      <p class="pequeno ayuda-herr">${AYUDA[this.herramienta]}</p>
+      <p class="pequeno ayuda-herr">${this.colocar ? `Dibuja dónde está <b>📍 ${esc(this.colocar.nombre)}</b> con el rectángulo o el polígono. <button type="button" class="btn mini" data-acc="no-colocar">Cancelar</button>` : AYUDA[this.herramienta]}</p>
       ${z ? `
         <div class="editor-zona">
-          <label>Nombre<input type="text" data-campo="nombre" value="${esc(z.nombre)}" maxlength="40"></label>
+          <label>Nombre del espacio<input type="text" data-campo="nombre" value="${esc(z.nombre)}" maxlength="40"></label>
           <div><span class="etiqueta-campo">Color</span>
             <div class="muestras">${COLORES.map((c) => `<button type="button" class="muestra ${z.color === c ? "on" : ""}" data-color="${c}" style="background:${c}" aria-label="Color ${c}"></button>`).join("")}</div>
           </div>
-          <label>Espacio de la app (sus productos)
-            <select data-campo="espacio">
-              <option value="">— Sin espacio —</option>
-              ${espacios.map((e) => `<option value="${e.id}" ${z.espacio_id === e.id ? "selected" : ""}>📍 ${esc(e.nombre)}</option>`).join("")}
-              <option value="__nuevo">＋ Nuevo espacio…</option>
-            </select>
-          </label>
+          ${z.espacio_id ? "" : `<p class="pequeno" style="margin:0">Espacio nuevo: se creará al guardar.</p>`}
           ${this.vsel ? `<div class="aviso-vertice"><span>Esquina elegida</span><button type="button" class="btn mini peligro" data-acc="quitar-vertice">✕ Quitar esquina</button></div>` : ""}
           <div class="fila-botones">
             <button type="button" class="btn mini" data-acc="deseleccionar">Elegir otra zona</button>
-            <button type="button" class="btn mini peligro" data-acc="eliminar">🗑 Eliminar zona</button>
+            <button type="button" class="btn mini peligro" data-acc="eliminar">Quitar del plano</button>
           </div>
         </div>` : `
         <div class="lista-zonas">
-          ${this.zonas.map((x) => `<button type="button" class="fila-zona" data-elegir="${esc(x.id)}"><i style="background:${esc(x.color)}"></i>${esc(x.nombre)}${x.espacio_id ? ` <small>📍 ${esc(espacios.find((e) => e.id === x.espacio_id)?.nombre ?? "")}</small>` : ""}</button>`).join("")}
-        </div>`}
+          ${this.zonas.map((x) => `<button type="button" class="fila-zona" data-elegir="${esc(x.id)}"><i style="background:${esc(x.color)}"></i>${esc(x.nombre)}</button>`).join("")}
+        </div>
+        ${this.sinDibujar().length ? `<div><span class="etiqueta-campo">Espacios sin dibujar en el plano</span>
+          <div class="lista-zonas">${this.sinDibujar().map((e) => `<button type="button" class="fila-zona sin-dibujar" data-colocar="${esc(e.id)}">＋ ${esc(e.nombre)}</button>`).join("")}</div></div>` : ""}`}
       <div class="editor-pie">
         <button type="button" class="btn mini" data-acc="restaurar" title="Volver a las zonas iniciales">Restaurar original</button>
         <span class="sep"></span>
@@ -360,6 +368,12 @@ export class EditorPlano {
     const b = e.target.closest("button");
     if (!b) return;
     if (b.dataset.herr) return this.cambiarHerramienta(b.dataset.herr);
+    if (b.dataset.colocar) {
+      this.colocar = this.op.espacios().find((e) => e.id === b.dataset.colocar);
+      this.sel = null; this.vsel = null; this.herramienta = "rect";
+      this.pintar(); this.pintarPanel();
+      return;
+    }
     if (b.dataset.elegir) { this.sel = b.dataset.elegir; this.vsel = null; this.herramienta = "mover"; this.pintar(); this.pintarPanel(); return; }
     if (b.dataset.color) { this.guardarHistoria(); this.zona().color = b.dataset.color; this.pintar(); this.pintarPanel(); return; }
     switch (b.dataset.acc) {
@@ -367,9 +381,10 @@ export class EditorPlano {
       case "rehacer": return this.rehacer();
       case "deseleccionar": this.sel = null; this.vsel = null; this.pintar(); this.pintarPanel(); return;
       case "quitar-vertice": if (this.vsel) this.quitarVertice(this.vsel.pi, this.vsel.vi); return;
+      case "no-colocar": this.colocar = null; this.herramienta = "mover"; this.pintarPanel(); return;
       case "eliminar": {
         const z = this.zona();
-        if (!confirm(`¿Eliminar la zona «${z.nombre}»? Los productos no se borran.`)) return;
+        if (!confirm(`¿Quitar «${z.nombre}» del plano? El espacio y sus productos se mantienen; podrás volver a dibujarlo.`)) return;
         this.guardarHistoria();
         this.zonas = this.zonas.filter((x) => x.id !== z.id);
         this.sel = null;
@@ -379,7 +394,10 @@ export class EditorPlano {
       case "restaurar":
         if (!confirm("¿Volver a las zonas iniciales del plano? Se perderán las formas que hayáis cambiado (podéis cancelar sin guardar).")) return;
         this.guardarHistoria();
-        this.zonas = this.op.zonasOriginales();
+        this.zonas = this.op.zonasOriginales().map((z) => {
+          const e = this.op.espacios().find((x) => x.nombre.toLowerCase() === z.nombre.toLowerCase());
+          return e ? { ...z, espacio_id: e.id } : z;
+        });
         this.sel = null;
         this.pintar(); this.pintarPanel();
         return;
@@ -389,7 +407,7 @@ export class EditorPlano {
         return this.op.alCancelar();
       case "guardar":
         b.disabled = true;
-        try { await this.op.alGuardar(copiar(this.zonas)); this.desmontar(); }
+        try { await this.op.alGuardar(copiar(this.zonas), this.fusiones); this.desmontar(); }
         finally { b.disabled = false; }
         return;
     }
@@ -403,7 +421,7 @@ export class EditorPlano {
     }
   }
   async cambioPanel(e) {
-    if (e.target.dataset.campo !== "espacio") return;
+    if (e.target.dataset.campo !== "espacio") return; // (ya no hay selector: el nombre de la zona es el del espacio)
     let v = e.target.value;
     if (v === "__nuevo") {
       const n = await this.op.crearEspacio();

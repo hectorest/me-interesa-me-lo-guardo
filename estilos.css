@@ -329,13 +329,7 @@ body.arrastrando, body.arrastrando * { user-select: none !important; -webkit-use
 /* ---------------- Plano ---------------- */
 .plano { width: 100%; height: auto; display: block; }
 .plano .muro { fill: #2f2a25; }
-.plano .zona polygon { fill: #fbf8f3; stroke: none; transition: fill .15s; }
-.plano .zona.asignada polygon { fill: #fffdf9; }
-.plano .zona.con-cosas polygon { fill: #fdf3ea; }
-.plano .zona.paso polygon { fill: #f4efe7; }
 .plano .zona { cursor: pointer; outline: none; }
-.plano .zona:hover polygon, .plano .zona:focus-visible polygon { fill: var(--acento-suave); }
-.plano .zona.activa polygon { fill: #f9d9cb; }
 .plano .hueco { fill: #fbf8f3; }
 .plano .arco { fill: rgba(47, 42, 37, .04); stroke: #b8ad9e; stroke-width: 1.5; stroke-dasharray: 4 4; pointer-events: none; }
 .plano .hoja { stroke: #8a7f70; stroke-width: 4; stroke-linecap: round; pointer-events: none; }
@@ -346,8 +340,6 @@ body.arrastrando, body.arrastrando * { user-select: none !important; -webkit-use
 .plano .etiqueta { pointer-events: none; }
 .plano .t-nombre { font-family: var(--serif); font-weight: 700; font-size: 34px; fill: var(--tinta); text-anchor: middle; letter-spacing: -.01em; }
 .plano .t-nombre.peq { font-size: 20px; }
-.plano .zona.libre .t-nombre { fill: var(--tinta-3); font-weight: 500; font-style: italic; }
-.plano .zona.paso .t-nombre { font-size: 26px; fill: var(--tinta-3); font-weight: 500; }
 .plano .t-sub { font-family: var(--sans); font-size: 19px; fill: var(--tinta-3); text-anchor: middle; }
 .plano .burbuja rect { fill: var(--acento); }
 .plano .burbuja text { font-family: var(--sans); font-weight: 700; font-size: 19px; fill: #fff; text-anchor: middle; }
@@ -391,7 +383,6 @@ body:not(.en-plano) #vista-plano { display: none; }
 /* ---- Plano con zonas editables (sustituye estilos anteriores de zona) ---- */
 .plano .suelo polygon, .plano .suelo rect { fill: #fbf8f3; }
 .plano .zona polygon { fill: var(--color); fill-opacity: .8; stroke: none; transition: fill-opacity .15s; }
-.plano .zona.libre polygon { fill-opacity: .5; }
 .plano .zona:hover polygon, .plano .zona:focus-visible polygon, .plano .zona.activa polygon { fill: var(--color); fill-opacity: 1; }
 .plano .zona.activa polygon { stroke: var(--acento); stroke-width: 6; }
 .plano .etiqueta.libre .t-nombre { fill: var(--tinta-2); font-weight: 500; font-style: italic; }

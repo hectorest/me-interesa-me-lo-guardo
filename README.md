@@ -27,7 +27,7 @@ El código de las funciones está en `supabase/functions/`.
 
 ## Uso
 
-- **Plano (pantalla de inicio)**: el plano de la casa (`plano.js`). Cada estancia se asigna a un espacio con «✎ Asignar estancias»; al tocarla se ven sus productos.
+- **Plano (pantalla de inicio)**: el plano de la casa (`plano.js`). Cada espacio (cocina, dormitorio…) es una zona del plano; al tocarla se ven sus productos. «✎ Editar plano» (`planoEditor.js`) permite dibujar, mover, dividir y unir espacios.
 
 - **+ Añadir**: pega el enlace. Revisa los datos y la categoría sugerida y guarda.
 - **Mismo producto en otra tienda**: si coincide el código EAN o el nombre es muy parecido, la app pregunta si es el mismo producto. Si lo es, añade la oferta a la misma ficha y muestra cuál es la más barata.
