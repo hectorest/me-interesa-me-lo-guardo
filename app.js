@@ -343,7 +343,7 @@ function pintarTitulo() {
   if (enEdicion && document.activeElement === enEdicion && (enEdicion.dataset.cat === f.cat || enEdicion.dataset.esp === f.esp)) return;
   const c = f.cat !== "todas" && f.cat !== "sin" ? catPorId(f.cat) : null;
   const es = f.esp && f.esp !== "sin" ? espPorId(f.esp) : null;
-  const editable = (tipo, id, nombre) => `<span class="titulo-envoltura"><input class="titulo-editable" id="titulo-cat" data-${tipo}="${id}" value="${esc(nombre)}" spellcheck="false" autocomplete="off" aria-label="Nombre" title="Haz clic para cambiar el nombre"><span class="lapiz" aria-hidden="true">✎</span></span><span class="medidor" aria-hidden="true"></span>`;
+  const editable = (tipo, id, nombre) => `<span class="titulo-envoltura"><input class="titulo-editable" id="titulo-cat" data-${tipo}="${id}" value="${esc(nombre)}" spellcheck="false" autocomplete="off" aria-label="Nombre" title="Haz clic para cambiar el nombre"><span class="lapiz" aria-hidden="true">✎</span></span><button type="button" class="btn-borrar-titulo" data-borrar-${tipo}="${id}" title="Eliminar ${tipo === "cat" ? "categoría" : "espacio"}" aria-label="Eliminar">🗑</button><span class="medidor" aria-hidden="true"></span>`;
   const chipEsp = f.esp ? `<span class="filtro-esp">📍 ${f.esp === "sin" ? "Sin espacio" : esc(es?.nombre ?? "")} <a href="#" data-quitar-esp title="Ver todos los espacios">✕</a></span>` : "";
   if (!c) {
     if (es && f.cat === "todas") {
@@ -999,13 +999,7 @@ async function accionCats(e) {
   }
   if (t.dataset.subirEsp) return reordenarEspacios(+t.dataset.subirEsp, +t.dataset.subirEsp - 1);
   if (t.dataset.bajarEsp) return reordenarEspacios(+t.dataset.bajarEsp, +t.dataset.bajarEsp + 1);
-  if (t.dataset.borrarEsp) {
-    const s = espPorId(t.dataset.borrarEsp);
-    const n = E.prods.filter((p) => p.esps.includes(s.id)).length;
-    if (!confirm(`¿Eliminar el espacio «${s.nombre}»?${n ? ` ${n} producto(s) dejarán de estar en él (no se borran).` : ""}`)) return;
-    await sb.from("espacios").delete().eq("id", s.id);
-    await cargar(); pintarGestionEspacios(); return;
-  }
+  if (t.dataset.borrarEsp) { if (await borrarEspacio(t.dataset.borrarEsp)) pintarGestionEspacios(); return; }
   if (t.id === "crear-cat") {
     const nombre = $("#nueva-cat").value.trim();
     if (!nombre) return;
@@ -1013,14 +1007,66 @@ async function accionCats(e) {
     if (error) return tostada("Error: " + error.message);
     await cargar(); pintarGestionCats();
   }
-  if (t.dataset.borrarCat) {
-    const c = catPorId(t.dataset.borrarCat);
-    const n = E.prods.filter((p) => p.cats.includes(c.id)).length;
-    if (!confirm(`¿Eliminar «${c.nombre}»?${n ? ` ${n} producto(s) dejarán de estar en ella (no se borran).` : ""}${hijosDe(c.id).length ? " Sus subcategorías pasarán a su nivel superior." : ""}`)) return;
-    await sb.from("categorias").update({ padre_id: c.padre_id }).eq("padre_id", c.id);
-    await sb.from("categorias").delete().eq("id", c.id);
-    await cargar(); pintarGestionCats();
-  }
+  if (t.dataset.borrarCat) { if (await borrarCategoria(t.dataset.borrarCat)) pintarGestionCats(); }
+}
+
+// Borrar una categoría (y opcionalmente sus subcategorías). Los productos nunca se borran.
+function borrarCategoria(id) {
+  const c = catPorId(id);
+  if (!c) return Promise.resolve(false);
+  const todas = [...descendientes(id)];
+  const subs = todas.filter((x) => x !== id);
+  const enCat = E.prods.filter((p) => p.cats.includes(id)).length;
+  const enArbol = E.prods.filter((p) => p.cats.some((x) => todas.includes(x))).length;
+  const padre = catPorId(c.padre_id);
+  const dlg = $("#dlg-borrar");
+  $("#borrar-titulo").textContent = `Eliminar «${c.nombre}»`;
+  $("#borrar-cuerpo").innerHTML = `
+    <p>${subs.length ? `Esta categoría tiene <b>${subs.length} subcategoría${subs.length > 1 ? "s" : ""}</b> (${subs.slice(0, 4).map((x) => esc(catPorId(x).nombre)).join(", ")}${subs.length > 4 ? "…" : ""}).` : "Esta categoría no tiene subcategorías."}</p>
+    ${subs.length ? `<div class="opciones-masivo">
+      <label><input type="radio" name="modo-borrar" value="subir" checked> <span><b>Borrar solo «${esc(c.nombre)}»</b><br><small class="pequeno">Sus subcategorías pasan ${padre ? `a «${esc(padre.nombre)}»` : "a ser principales"}.</small></span></label>
+      <label><input type="radio" name="modo-borrar" value="todo"> <span><b>Borrar también sus subcategorías</b><br><small class="pequeno">Se eliminan las ${subs.length + 1} categorías.</small></span></label>
+    </div>` : ""}
+    <p class="pequeno">Los productos <b>no se borran</b>: solo dejan de estar en ${subs.length ? "las categorías eliminadas" : "esta categoría"} (${subs.length ? `${enCat} en «${esc(c.nombre)}», ${enArbol} contando subcategorías` : `${enCat} producto${enCat === 1 ? "" : "s"}`}).</p>`;
+  dlg.showModal();
+  return new Promise((resolver) => {
+    const ok = $("#borrar-ok"), no = $("#borrar-cancelar");
+    const fin = (v) => { ok.onclick = no.onclick = dlg.onclose = null; if (dlg.open) dlg.close(); resolver(v); };
+    no.onclick = () => fin(false);
+    dlg.onclose = () => fin(false);
+    ok.onclick = async () => {
+      ok.disabled = true;
+      try {
+        const todo = $('input[name="modo-borrar"]:checked')?.value === "todo";
+        if (todo) {
+          const { error } = await sb.from("categorias").delete().in("id", todas);
+          if (error) throw error;
+        } else {
+          const r1 = await sb.from("categorias").update({ padre_id: c.padre_id }).eq("padre_id", c.id);
+          if (r1.error) throw r1.error;
+          const r2 = await sb.from("categorias").delete().eq("id", c.id);
+          if (r2.error) throw r2.error;
+        }
+        if (todo ? todas.includes(E.filtro.cat) : E.filtro.cat === c.id) E.filtro.cat = c.padre_id || "todas";
+        await cargar();
+        tostada(todo && subs.length ? `Eliminadas «${c.nombre}» y sus subcategorías` : `Categoría «${c.nombre}» eliminada`);
+        fin(true);
+      } catch (err) { tostada("No se pudo eliminar: " + err.message, 6000); fin(false); }
+      finally { ok.disabled = false; }
+    };
+  });
+}
+async function borrarEspacio(id) {
+  const s = espPorId(id);
+  if (!s) return false;
+  const n = E.prods.filter((p) => p.esps.includes(s.id)).length;
+  if (!confirm(`¿Eliminar el espacio «${s.nombre}»?${n ? ` ${n} producto(s) dejarán de estar en él (no se borran).` : ""}`)) return false;
+  const { error } = await sb.from("espacios").delete().eq("id", s.id);
+  if (error) { tostada("No se pudo eliminar: " + error.message); return false; }
+  if (E.filtro.esp === s.id) E.filtro.esp = "";
+  await cargar();
+  tostada(`Espacio «${s.nombre}» eliminado`);
+  return true;
 }
 async function cambioCats(e) {
   const t = e.target;
@@ -1310,6 +1356,12 @@ $("#f-orden").onchange = (e) => { E.filtro.orden = e.target.value; pintarRejilla
 $("#f-bajadas").onchange = (e) => { E.filtro.bajadas = e.target.checked; pintar(); };
 
 // Edición del nombre de la categoría desde el título
+$("#titulo-vista").addEventListener("click", (e) => {
+  const b = e.target.closest(".btn-borrar-titulo");
+  if (!b) return;
+  if (b.dataset.borrarCat) borrarCategoria(b.dataset.borrarCat);
+  else if (b.dataset.borrarEsp) borrarEspacio(b.dataset.borrarEsp);
+});
 $("#titulo-vista").addEventListener("input", (e) => { if (e.target.id === "titulo-cat") ajustarAnchoTitulo(); });
 $("#titulo-vista").addEventListener("keydown", (e) => {
   if (e.target.id !== "titulo-cat") return;

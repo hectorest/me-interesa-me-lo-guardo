@@ -176,6 +176,21 @@
     </div>
   </dialog>
 
+  <!-- Diálogo: eliminar categoría -->
+  <dialog id="dlg-borrar" class="dialogo">
+    <form method="dialog" class="dlg-cab">
+      <h3 id="borrar-titulo">Eliminar categoría</h3>
+      <button class="btn icono" value="cerrar" aria-label="Cerrar">✕</button>
+    </form>
+    <div class="dlg-cuerpo">
+      <div id="borrar-cuerpo"></div>
+      <div class="pie-dlg">
+        <button type="button" class="btn" id="borrar-cancelar">Cancelar</button>
+        <button type="button" class="btn primario peligro-fuerte" id="borrar-ok">Eliminar</button>
+      </div>
+    </div>
+  </dialog>
+
   <div id="tostada" class="tostada" hidden></div>
 
   <script type="module" src="app.js"></script>

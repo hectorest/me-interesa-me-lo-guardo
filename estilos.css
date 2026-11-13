@@ -289,3 +289,11 @@ body.seleccionando .principal { padding-bottom: 140px; }
 .fila-gestion.esp { grid-template-columns: 1fr auto auto; }
 .orden-btns { display: inline-flex; gap: 4px; }
 @media (max-width: 820px) { .fila-gestion.esp { grid-template-columns: 1fr auto auto; } }
+
+/* Eliminar desde el título */
+.btn-borrar-titulo { border: 0; background: none; cursor: pointer; font-size: 16px; padding: 4px 6px; border-radius: 8px; opacity: 0; transition: opacity .15s, background .15s; vertical-align: middle; }
+#titulo-vista:hover .btn-borrar-titulo, .btn-borrar-titulo:focus { opacity: .7; }
+.btn-borrar-titulo:hover { opacity: 1 !important; background: #fdecea; }
+@media (hover: none) { .btn-borrar-titulo { opacity: .55; } }
+.btn.peligro-fuerte { background: var(--rojo); border-color: var(--rojo); }
+.btn.peligro-fuerte:hover { background: #8f1c13; border-color: #8f1c13; }
