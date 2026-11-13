@@ -300,3 +300,10 @@ body.seleccionando .principal { padding-bottom: 140px; }
 
 .barra-sel .btn.sel-borrar { color: #ffb4a8; }
 .barra-sel .btn.sel-borrar:hover:not(:disabled) { background: var(--rojo); border-color: var(--rojo); color: #fff; }
+
+/* Packs */
+.etq.pack { background: #f3e3c7; color: #7a4d00; font-weight: 600; }
+.pack-linea { display: flex; align-items: center; gap: 6px; margin-top: -2px; }
+.campo-pack { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.campo-pack .unidades { display: inline-flex; flex-direction: row; align-items: center; gap: 6px; font-size: 14px; color: var(--tinta); font-weight: 400; }
+.campo-pack .unidades input { width: 70px; padding: 6px 8px; }

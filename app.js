@@ -43,8 +43,33 @@ const euros = (n) => (n == null || n === "" ? "—" : fmt.format(Number(n)));
 const num = (v) => (v == null || v === "" ? null : Number(v));
 const norm = (s) => String(s ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9ñ]+/g, " ").trim();
 const raiz = (w) => (w.length > 4 && w.endsWith("es") ? w.slice(0, -2) : w.length > 3 && w.endsWith("s") ? w.slice(0, -1) : w);
-const VACIAS = new Set("de del la las el los y o en con para por sin un una unos unas al a mas pack set x cm mm kg gr ml color negro blanco gris azul rojo verde talla nuevo nueva".split(" "));
-const fichas = (s) => norm(s).split(" ").filter((w) => w.length > 2 && !VACIAS.has(w)).map(raiz);
+const VACIAS = new Set("de del la las el los y o en con para por sin un una unos unas al a mas pack packs set sets lote lotes juego juegos kit unidad unidades uds pieza piezas x cm mm kg gr ml color negro blanco gris azul rojo verde talla nuevo nueva".split(" "));
+const fichas = (s) => norm(s).split(" ").filter((w) => w.length > 2 && !VACIAS.has(w) && !/^\d+$/.test(w)).map(raiz);
+
+// ---------------- Packs ----------------
+// Detecta si el precio es de un pack («Pack de 4 sillas», «set de 2», «lote 3 uds»…) en el nombre o en el enlace.
+function detectarPack(...textos) {
+  const t = textos.filter(Boolean).map((x) => {
+    try { if (/^https?:/.test(x)) { const u = new URL(x); return decodeURIComponent(u.pathname); } } catch { /* */ }
+    return x;
+  }).join(" ").toLowerCase().replace(/[-_/]+/g, " ");
+  const pats = [
+    /\b(?:pack|packs|lote|set|juego|kit|conjunto)\s*(?:de\s*)?(\d{1,2})\b/,
+    /\b(\d{1,2})\s*(?:uds?\.?|unidades|piezas|pzs?)\b/,
+    /\b(\d{1,2})\s*(?:x\s*)?(?:sillas|taburetes|sillones|butacas|mesitas|cojines|vasos|copas|platos|toallas|fundas)\b(?=.*\b(?:pack|set|lote|juego)\b)/,
+  ];
+  for (const p of pats) {
+    const m = t.match(p);
+    if (m) { const n = +m[1]; if (n >= 2 && n <= 99) return n; }
+  }
+  return null;
+}
+// Quita la parte de «pack» de un nombre de sección de tienda: «Packs 4 sillas» → «Sillas»
+function sinPack(nombre) {
+  const s = String(nombre || "").replace(/\b(?:packs?|lotes?|sets?|juegos?|kits?|conjuntos?)\b\s*(?:de\s*)?\d*\s*/gi, "").replace(/\b\d+\s*(?:uds?|unidades)\b/gi, "").replace(/\s+/g, " ").trim();
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : "";
+}
+const textoPack = (p) => (p.pack_unidades ? `Pack de ${p.pack_unidades}` : "");
 const dias = (f) => (f ? (Date.now() - new Date(f).getTime()) / 864e5 : Infinity);
 function leerLocal(k, def) { try { return JSON.parse(localStorage.getItem(k)) ?? def; } catch { return def; } }
 function guardarLocal(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* sin almacenamiento */ } }
@@ -142,8 +167,9 @@ function sugerirCategorias(d) {
 
   let nueva = null;
   if (!ids.length) {
-    const cands = [...(d.migas || [])].filter((m) => m && m.length < 40 && !/^(productos?|todos|tienda|categor[ií]as?|ver todo)$/i.test(m));
-    const nombre = cands[cands.length - 1] || d.categoriaTienda?.split(/[>/|›]/).pop()?.trim();
+    // Las secciones tipo «Packs 4 sillas» no son una categoría: se quedan en «Sillas»
+    const cands = [...(d.migas || [])].map(sinPack).filter((m) => m && m.length < 40 && !/^(productos?|todos|tienda|categor[ií]as?|ver todo|ofertas?|novedades|outlet)$/i.test(m));
+    const nombre = cands[cands.length - 1] || sinPack(d.categoriaTienda?.split(/[>/|›]/).pop()?.trim());
     if (nombre && !buscarCat(nombre)) {
       let padre = null;
       for (let i = cands.length - 2; i >= 0 && !padre; i--) padre = buscarCat(cands[i]);
@@ -222,7 +248,7 @@ function filtrados({ ignorarCat = false, ignorarEsp = false } = {}) {
     if (esp && esp !== "sin" && !p.esps.includes(esp)) return false;
     if (f.bajadas && !bajadaProducto(p)) return false;
     if (palabras.length) {
-      const pajar = norm([p.nombre, p.marca, p.notas, p.descripcion, ...p.ofertas.map((o) => o.tienda), ...p.cats.map(ruta), ...p.esps.map((e) => espPorId(e)?.nombre)].join(" "));
+      const pajar = norm([p.nombre, textoPack(p), p.marca, p.notas, p.descripcion, ...p.ofertas.map((o) => o.tienda), ...p.cats.map(ruta), ...p.esps.map((e) => espPorId(e)?.nombre)].join(" "));
       if (!palabras.every((w) => pajar.includes(w))) return false;
     }
     return true;
@@ -437,6 +463,7 @@ function tarjeta(p) {
         <span class="precio">${euros(o?.precio)}</span>
         ${o?.precio_original ? `<span class="precio-orig">${euros(o.precio_original)}</span>` : ""}
       </div>
+      ${p.pack_unidades ? `<div class="pack-linea"><span class="etq pack">Pack ×${p.pack_unidades}</span>${o?.precio ? ` <span class="pequeno">${euros(o.precio / p.pack_unidades)}/ud</span>` : ""}</div>` : ""}
       ${o ? `<div class="acciones"><a class="btn mini" href="${esc(o.url)}" target="_blank" rel="noopener" data-parar>Ir a la oferta ↗</a></div>` : ""}
     </div>
   </article>`;
@@ -564,6 +591,7 @@ async function leer(tituloCompartido = "") {
 }
 
 function prepararBorrador(d, { desdeMarcador = false } = {}) {
+  B.pack = detectarPack(d.titulo, d.url, d.urlFinal);
   if (d.urlFinal && /^https?:/.test(d.urlFinal) && !/r\.jina\.ai/.test(d.urlFinal)) d.url = d.urlFinal;
   d.tienda = d.tienda || tiendaDeUrl(d.url);
   B.d = d;
@@ -619,6 +647,11 @@ function pintarFormAnadir() {
       <label>Precio antes de la oferta (€)<input type="number" step="0.01" min="0" id="a-original" value="${d.precioOriginal ?? ""}" inputmode="decimal" placeholder="opcional"></label>
       <label>Tienda<input type="text" id="a-tienda" value="${esc(d.tienda ?? "")}"></label>
       <label>Marca<input type="text" id="a-marca" value="${esc(d.marca ?? "")}" placeholder="opcional"></label>
+      <div class="completo campo-pack">
+        <label class="interruptor"><input type="checkbox" id="a-es-pack" ${B.pack ? "checked" : ""}> El precio es de un <b>pack</b></label>
+        <label class="unidades" ${B.pack ? "" : "hidden"}>de <input type="number" id="a-pack" min="2" max="99" value="${B.pack ?? 2}" inputmode="numeric"> unidades</label>
+        ${B.pack ? `<span class="pequeno">(detectado automáticamente)</span>` : ""}
+      </div>
       <div class="completo" id="bloque-cats" ${B.decision.startsWith("actualizar") ? "hidden" : ""}>
         <label style="margin-bottom:6px">Categorías ${B.sel.some((s) => s.nuevo) || B.sugeridas.length ? `<span class="pequeno">(sugeridas automáticamente; puedes cambiarlas)</span>` : ""}</label>
         <div id="a-cats"></div>
@@ -640,6 +673,7 @@ function pintarFormAnadir() {
   $("[data-cerrar]", cont).onclick = () => $("#dlg-anadir").close();
   $("[data-ver]", cont)?.addEventListener("click", (e) => { $("#dlg-anadir").close(); abrirDetalle(e.target.dataset.ver); });
   $("#btn-guardar").onclick = guardarBorrador;
+  $("#a-es-pack").onchange = (e) => { $(".campo-pack .unidades", cont).hidden = !e.target.checked; if (e.target.checked) $("#a-pack").focus(); };
   if (!$("#a-nombre").value) $("#a-nombre").focus();
 }
 
@@ -652,6 +686,7 @@ async function guardarBorrador() {
   const imagen = $("#a-imagen").value.trim() || null;
   const tienda = $("#a-tienda").value.trim() || tiendaDeUrl(B.d.url);
   const marca = $("#a-marca").value.trim() || null;
+  const pack = $("#a-es-pack").checked ? Math.max(2, Math.min(99, parseInt($("#a-pack").value, 10) || 2)) : null;
   const notas = $("#a-notas").value.trim() || null;
   if (!nombre) { tostada("Ponle un nombre al producto"); $("#a-nombre").focus(); return; }
   btn.disabled = true;
@@ -679,10 +714,11 @@ async function guardarBorrador() {
       if (!p.ean && B.d.ean) cambios.ean = B.d.ean;
       if (!p.imagen && imagen) cambios.imagen = imagen;
       if (!p.marca && marca) cambios.marca = marca;
+      if (!p.pack_unidades && pack) cambios.pack_unidades = pack;
       if (notas) cambios.notas = [p.notas, notas].filter(Boolean).join("\n");
       if (Object.keys(cambios).length) await sb.from("productos").update(cambios).eq("id", pid);
     } else {
-      const { data, error } = await sb.from("productos").insert({ nombre, imagen, marca, ean: B.d.ean || null, descripcion: B.d.descripcion || null, notas }).select().single();
+      const { data, error } = await sb.from("productos").insert({ nombre, imagen, marca, ean: B.d.ean || null, descripcion: B.d.descripcion || null, notas, pack_unidades: pack }).select().single();
       if (error) throw error;
       pid = data.id;
     }
@@ -741,6 +777,11 @@ function pintarDetalle() {
           </select></label>
           <label>Marca<input type="text" id="d-marca" value="${esc(p.marca ?? "")}"></label>
         </div>
+        <div class="campo-pack">
+          <label class="interruptor"><input type="checkbox" id="d-es-pack" ${p.pack_unidades ? "checked" : ""}> El precio es de un <b>pack</b></label>
+          <label class="unidades" ${p.pack_unidades ? "" : "hidden"}>de <input type="number" id="d-pack" min="2" max="99" value="${p.pack_unidades ?? 2}" inputmode="numeric"> unidades</label>
+          ${p.pack_unidades && mejor?.precio ? `<span class="pequeno">${euros(mejor.precio / p.pack_unidades)} por unidad</span>` : ""}
+        </div>
         <label>Imagen (enlace)<input type="url" id="d-imagen" value="${esc(p.imagen ?? "")}"></label>
         <div><label style="margin-bottom:6px">Categorías</label><div id="d-cats"></div></div>
         <div><label style="margin-bottom:6px">Espacios</label><div id="d-esps"></div></div>
@@ -786,6 +827,7 @@ function pintarDetalle() {
     </div>`;
   selectorCats($("#d-cats"), D.sel);
   selectorEspacios($("#d-esps"), D.esps);
+  $("#d-es-pack").onchange = (e) => { $("#detalle .campo-pack .unidades").hidden = !e.target.checked; };
   if (D.historial) pintarGrafica();
 }
 
@@ -834,7 +876,8 @@ async function accionDetalle(e) {
       const ids = await resolverCats(D.sel);
       const { error } = await sb.from("productos").update({
         nombre: $("#d-nombre").value.trim() || p.nombre, estado: $("#d-estado").value,
-        marca: $("#d-marca").value.trim() || null, imagen: $("#d-imagen").value.trim() || null, notas: $("#d-notas").value.trim() || null,
+        marca: $("#d-marca").value.trim() || null,
+        pack_unidades: $("#d-es-pack").checked ? Math.max(2, Math.min(99, parseInt($("#d-pack").value, 10) || 2)) : null, imagen: $("#d-imagen").value.trim() || null, notas: $("#d-notas").value.trim() || null,
       }).eq("id", p.id);
       if (error) throw error;
       const quitar = p.cats.filter((c) => !ids.includes(c));
